@@ -7,8 +7,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, "..", "");
   const target = env.SERVER_URL || "http://localhost:8787";
   const proxy = Object.fromEntries(
-    ["/board", "/ask", "/claim", "/heartbeat", "/fail"].map((p) => [p, { target, changeOrigin: true }]),
+    ["/board", "/ask", "/claim", "/heartbeat", "/fail", "/overlap", "/assign", "/brief"].map((p) => [p, { target, changeOrigin: true }]),
   );
+  proxy["/ws"] = { target, changeOrigin: true, ws: true } as (typeof proxy)[string] & { ws: boolean };
   return {
     plugins: [react()],
     server: { port: 5173, proxy, fs: { allow: [".."] } },

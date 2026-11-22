@@ -1,15 +1,17 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AskRequest, Board } from "../../shared/types.ts";
 import { SIM_TEAMS, TEAM } from "./api.ts";
 import { Feed, MemberStack, type Focus } from "./Board.tsx";
 import { ChatPanel } from "./ChatPanel.tsx";
 import { Dock, type DockItem } from "./Dock.tsx";
 import { useBoards } from "./useBoards.ts";
+import { SameTaskCards } from "./SameTask.tsx";
+import { startServerEvents } from "./serverEvents.ts";
 
 const ALL_TEAMS = [TEAM, ...SIM_TEAMS];
 const DEPT = "dept:engineering";
 const META: Record<string, Omit<DockItem, "id">> = {
-  [TEAM]: { label: "Murmur", glyph: "M", hue: 168 },
+  [TEAM]: { label: "Zipline", glyph: "Z", hue: 168 },
   [DEPT]: { label: "Engineering", glyph: "E", hue: 210 },
   "team-payments": { label: "Payments", glyph: "P", hue: 260, sim: true, divider: true },
   "team-infra": { label: "Infra", glyph: "I", hue: 28, sim: true },
@@ -25,6 +27,8 @@ export default function App() {
 
   const shown: Board[] = view === DEPT ? ALL_TEAMS.map((t) => boards[t]).filter(Boolean) : boards[view] ? [boards[view]] : [];
   const allMembers = useMemo(() => ALL_TEAMS.flatMap((t) => boards[t]?.members ?? []), [boards]);
+  useEffect(startServerEvents, []);
+  const nameOf = (user: string) => allMembers.find((m) => m.user === user)?.name ?? user.charAt(0).toUpperCase() + user.slice(1);
   const shownUsers = shown.flatMap((b) => b.members.map((m) => m.user));
   const shownRef = useRef(shownUsers);
   shownRef.current = shownUsers;
@@ -45,6 +49,7 @@ export default function App() {
           <span className={`dot ${source === "live" ? "active" : "idle"} source`} title={source === "live" ? "Live" : "Server unreachable: fixtures"} />
         </header>
         <div className="main-scroll" key={view}>
+          <SameTaskCards nameOf={nameOf} />
           <MemberStack boards={shown} focus={focus} onAsk={(m) => setPending((p) => ({ text: `What's ${m.name} doing?`, n: (p?.n ?? 0) + 1 }))} />
           <Feed items={shown.flatMap((b) => b.feed)} />
         </div>
@@ -58,6 +63,8 @@ export default function App() {
         pending={pending}
         onFocus={onFocus}
       />
+      {/* Yuvi's <IncomingCall/> (web/src/call/) mounts here. It can listen with
+          onServerEvent("incoming_call", ...) from ./serverEvents.ts. */}
     </div>
   );
 }

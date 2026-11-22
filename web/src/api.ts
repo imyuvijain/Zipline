@@ -1,4 +1,4 @@
-import type { AskRequest, AskResponse, Board, UserId } from "../../shared/types.ts";
+import type { AskRequest, AskResponse, Board, OverlapAnswer, UserId } from "../../shared/types.ts";
 import fixtures from "../../shared/fixtures.json";
 
 // Same-origin by default: the Vite proxy in dev, the server itself when deployed.
@@ -88,4 +88,9 @@ export async function ask(req: AskRequest, signal: AbortSignal): Promise<AskResp
     await new Promise((r) => setTimeout(r, 1500));
     return { ...(fixtures.sampleAsk as AskResponse), fixture: true };
   }
+}
+
+export async function answerOverlap(id: string, same: boolean): Promise<void> {
+  const body: OverlapAnswer = { user: ME, same };
+  await fetchJson(`/overlap/${encodeURIComponent(id)}/answer`, { method: "POST", body: JSON.stringify(body) }, 5000);
 }

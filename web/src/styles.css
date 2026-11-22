@@ -55,6 +55,21 @@ h1, h3 { margin: 0; letter-spacing: -0.015em; }
 .member.clash { border-color: var(--warn); background: var(--warn-soft); }
 .member.clash .scope { background: var(--warn); color: #1a1408; }
 
+/* "Same task?" card: part of the stack, amber like a collision. */
+.same-task-list { display: grid; gap: 8px; }
+.same-task { display: grid; gap: 10px; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--warn); background: var(--warn-soft); animation: rise .3s var(--ease-out), wash 1.2s ease-out; }
+.same-task.failed { border-color: var(--bad); }
+.same-task-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.same-task-head .name { font-size: 17px; }
+.same-task-text { margin: 0; font-size: 17px; line-height: 1.45; }
+.same-task-actions { display: flex; gap: 8px; }
+.avatar.sm { width: 28px; height: 28px; font-size: 13px; }
+.btn { font-size: 15px; font-weight: 500; padding: 7px 14px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; transition: filter .15s, transform .08s; }
+.btn:hover { filter: brightness(1.2); }
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.primary { background: var(--warn); border-color: var(--warn); color: #1a1408; }
+
 /* Card being asked about. */
 .member.focus { border-color: var(--accent); }
 .member.focus.done { transition: border-color 1s; }
@@ -78,7 +93,7 @@ h1, h3 { margin: 0; letter-spacing: -0.015em; }
 
 .tag { font-family: var(--f-mono); font-size: 12px; padding: 1px 7px; border-radius: 5px; background: var(--chip); color: var(--muted); }
 .tag.claim { color: var(--accent); }
-.tag.alert, .tag.fail { color: var(--warn); }
+.tag.alert, .tag.fail, .tag.overlap { color: var(--warn); }
 
 .feed { border-top: 1px solid var(--line); padding-top: 18px; }
 .feed ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
