@@ -2,12 +2,9 @@
 // Mount once: <IncomingCall/>. It rings on the `incoming_call` WS push, or when <CatchMeUp/> fires.
 import { useEffect, useRef, useState } from "react";
 import type { AskResponse, BriefKind, BriefRequest, BriefResponse, UserId } from "../../../shared/types.ts";
-import { ME } from "../api.ts";
+import { IS_MANAGER, ME } from "../api.ts";
 import { onServerEvent } from "../serverEvents.ts";
 import { AgentCall, prepareAgent, type AgentSession } from "./AgentCall.tsx";
-import team from "../../../shared/team.json";
-
-const IS_MANAGER = ME === (team as { manager?: string }).manager;
 
 const BASE = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? "";
 
