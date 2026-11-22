@@ -4,7 +4,8 @@ import { onServerEvent } from "./serverEvents.ts";
 
 /** Pings I sent (by recipient) and pings I received. "sending" shows instantly and lasts at least MIN_SENDING_MS so the result never flickers. */
 export type Sent = { at: number; status: "sending" | "confirmed" | "failed"; text?: string; n: number };
-const MIN_SENDING_MS = 600;
+/** Matches the sweep in styles.css (.pinger.sending ::before), so the bar always finishes before the result shows. */
+export const MIN_SENDING_MS = 1200;
 export type Received = { id: string; from: string; text?: string; at: number };
 
 let state: { sent: Record<string, Sent>; received: Received[] } = { sent: {}, received: [] };
