@@ -5,6 +5,11 @@ Challenge: **"an AI coworker they'd actually use."**
 
 > **Read this whole file (5 min), find your role in §5, and start.** Questions go in Slack.
 > **Changed at 12:45:** the product is now **Zipline**, voice is back for catch-up calls (§2b), collisions check the task as well as the folder (§2c), and asking about one person is never cached. Code names (`MURMUR_*` env vars, `team-murmur`, `~/.murmur`) **stay as they are** so we don't break code that's already written.
+> **Changed at 13:55 (Yuvi):**
+> - **Calls cover only what's relevant to the listener.** `catchup` mentions a teammate only when they touch your area or files, collide with you, fail in your area, or have an assignment to or from you. If nothing is relevant, it says so in one line and hangs up. `assignment` gives the ask plus only the context for that task. `manager_digest` covers only what needs the manager: blockers, collisions, open or overdue asks, and people who are idle. It never recites everyone's status. 120 words or less.
+> - **Spoken version for TTS.** Each brief has `script` (the exact paths, shown in the transcript) and `spoken` (paths become words: "the summarize file in scout", "the Qwen model", "1:30"), and ElevenLabs uses `apply_text_normalization: "on"`.
+> - **Today's tasks page.** `GET /tasks?user=` lists today's assignments to you. `POST /tasks/:id/done` marks one done, and `POST /tasks` `{from,to,text}` assigns one (and rings the call). The web adds a "Board | Today's tasks" toggle, and managers also get an "Assign a task" form.
+> - **Web layout.** The right-hand chat panel is gone, replaced by a one-line "Ask about a teammate…" box above the board. A **profile menu at the top right** shows your avatar, name and role, includes **Switch user (demo)** (saved in `localStorage.zipline_user`, then the page reloads), and holds Team review / Catch me up.
 
 ## 👋 START HERE: who does what
 
