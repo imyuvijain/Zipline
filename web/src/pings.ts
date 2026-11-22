@@ -2,8 +2,10 @@ import { useSyncExternalStore } from "react";
 import { ping } from "./api.ts";
 import { onServerEvent } from "./serverEvents.ts";
 
-/** Pings I sent (by recipient) and pings I received. Optimistic: "sent" shows instantly. */
-export type Sent = { at: number; status: "sent" | "confirmed" | "failed"; text?: string; n: number };
+/** Pings I sent (by recipient) and pings I received. "sending" shows instantly and lasts at least MIN_SENDING_MS so the result never flickers. */
+export type Sent = { at: number; status: "sending" | "confirmed" | "failed"; text?: string; n: number };
+/** Matches the sweep in styles.css (.pinger.sending ::before), so the bar always finishes before the result shows. */
+export const MIN_SENDING_MS = 1200;
 export type Received = { id: string; from: string; text?: string; at: number };
 
 let state: { sent: Record<string, Sent>; received: Received[] } = { sent: {}, received: [] };
@@ -16,12 +18,16 @@ const set = (next: typeof state) => {
 
 export function sendPing(to: string, text?: string) {
   const n = (state.sent[to]?.n ?? 0) + 1;
-  set({ ...state, sent: { ...state.sent, [to]: { at: Date.now(), status: "sent", text, n } } });
+  set({ ...state, sent: { ...state.sent, [to]: { at: Date.now(), status: "sending", text, n } } });
   const settle = (status: Sent["status"]) => {
     const cur = state.sent[to];
-    if (cur?.n === n) set({ ...state, sent: { ...state.sent, [to]: { ...cur, status } } });
+    if (cur?.n === n) set({ ...state, sent: { ...state.sent, [to]: { ...cur, status, at: Date.now() } } });
   };
-  ping(to, text).then(() => settle("confirmed"), () => settle("failed"));
+  const minWait = new Promise((r) => setTimeout(r, MIN_SENDING_MS));
+  ping(to, text).then(
+    () => minWait.then(() => settle("confirmed")),
+    () => minWait.then(() => settle("failed")),
+  );
 }
 
 export function dismissPing(id: string) {

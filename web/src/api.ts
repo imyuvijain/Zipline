@@ -6,6 +6,8 @@ const BASE = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? "";
 
 export const ME: UserId = (import.meta.env.VITE_MURMUR_USER as string | undefined) || "richard";
 export const TEAM = "team-murmur";
+/** The laptops' local Ollama model that writes every answer (SPEC §4). */
+export const LOCAL_MODEL = (import.meta.env.VITE_LOCAL_MODEL as string | undefined) || "qwen2.5:3b";
 export const SIM_TEAMS = ["team-payments", "team-infra"];
 
 export type Source = "live" | "fixtures";

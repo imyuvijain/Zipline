@@ -36,21 +36,20 @@ function Pinger({ m }: { m: Member }) {
   const sent = usePings().sent[m.user];
   const now = useNow(1000);
   const age = sent ? (now - sent.at) / 1000 : Infinity;
-  const recent = sent && sent.status !== "failed" && age < 60;
-  const coolingDown = recent && age < 2;
-  const label = sent?.status === "failed" ? "Retry" : recent ? `Pinged · ${fmtAge(age).replace(" ago", "")}` : "Ping";
+  const status = sent?.status === "sending" ? "sending" : sent?.status === "failed" ? "failed" : sent && age < 60 ? "sent" : "idle";
+  const label = { sending: "Pinging", failed: "Retry", sent: `Pinged · ${fmtAge(age).replace(" ago", "")}`, idle: "Ping" }[status];
   return (
     <form
-      className={`pinger ${sent?.status === "failed" ? "failed" : recent ? "sent" : ""}`}
+      className={`pinger ${status}`}
       onSubmit={(e) => {
         e.preventDefault();
-        if (coolingDown) return;
+        if (status === "sending") return;
         sendPing(m.user, text.trim() || undefined);
         setText("");
       }}
     >
       <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Note" maxLength={140} aria-label={`Note to ${m.name}`} />
-      <button key={sent?.n ?? 0} className={`btn primary ${sent ? "pop" : ""}`} disabled={coolingDown}>{label}</button>
+      <button className="btn primary" disabled={status === "sending"} aria-live="polite"><span>{label}</span></button>
     </form>
   );
 }

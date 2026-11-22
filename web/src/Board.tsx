@@ -54,7 +54,7 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
           <span className="avatar" aria-hidden>
             {m.name.slice(0, 1)}
             {focused && focus!.phase === "asking" && <span className="avatar-ring" />}
-            {pingedOut && <span key={out.n} className={`ping-burst ${out.status}`} />}
+            {pingedOut && out.status === "confirmed" && <span key={out.n} className="ping-burst" />}
             {pingedOut && <span className={`ping-dot ${out.status}`} title={out.status === "failed" ? "Ping failed" : `Pinged ${fmtAge(outAge)}`} />}
             {pingedMe && <span className="ping-burst incoming" />}
           </span>
