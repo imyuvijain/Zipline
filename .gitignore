@@ -1,0 +1,9 @@
+.env
+.env.local
+node_modules/
+.DS_Store
+*.pdf
+__pycache__/
+.venv/
+dist/
+build/
