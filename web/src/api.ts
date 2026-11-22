@@ -1,10 +1,26 @@
 import type { AskRequest, AskResponse, Board, OverlapAnswer, UserId } from "../../shared/types.ts";
 import fixtures from "../../shared/fixtures.json";
+import team from "../../shared/team.json";
 
 // Same-origin by default: the Vite proxy in dev, the server itself when deployed.
 const BASE = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? "";
 
-export const ME: UserId = (import.meta.env.VITE_MURMUR_USER as string | undefined) || "richard";
+const USER_KEY = "zipline_user";
+function readStoredUser(): string | null {
+  try { return localStorage.getItem(USER_KEY); } catch { return null; }
+}
+/** Current user: localStorage (demo switcher) → VITE_MURMUR_USER → "richard". Switching reloads, so this is read once. */
+export const ME: UserId = readStoredUser() || (import.meta.env.VITE_MURMUR_USER as string | undefined) || "richard";
+export const MANAGER: UserId | undefined = (team as { manager?: string }).manager;
+export const IS_MANAGER = ME === MANAGER;
+export const TEAM_MEMBERS: { user: UserId; name: string }[] = team.members.map((m) => ({ user: m.user, name: m.name }));
+export const nameOfUser = (u: UserId) => TEAM_MEMBERS.find((m) => m.user === u)?.name ?? u.charAt(0).toUpperCase() + u.slice(1);
+export const roleOf = (u: UserId) => (u === MANAGER ? "Manager" : "Engineer");
+/** Simplest way to reconnect the WS as someone else: persist and reload. */
+export function switchUser(u: UserId) {
+  try { localStorage.setItem(USER_KEY, u); } catch { /* private mode: reload still uses env default */ }
+  location.reload();
+}
 export const TEAM = "team-murmur";
 /** The laptops' local Ollama model that writes every answer (SPEC §4). */
 export const LOCAL_MODEL = (import.meta.env.VITE_LOCAL_MODEL as string | undefined) || "qwen2.5:3b";
@@ -102,4 +118,36 @@ export interface PingRequest { from: UserId; to: UserId; text?: string }
 export async function ping(to: UserId, text?: string): Promise<void> {
   const body: PingRequest = { from: ME, to, ...(text ? { text } : {}) };
   await fetchJson("/ping", { method: "POST", body: JSON.stringify(body) }, 5000);
+}
+
+// ---------- Today's tasks (server branch may not be merged: 404 → null) ----------
+
+export interface Task { id: string; from: UserId; to: UserId; text: string; status: "open" | "done"; at: string }
+
+async function rawFetch(path: string, init: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
+  return fetch(BASE + path, { ...init, signal: AbortSignal.timeout(timeoutMs), headers: { "content-type": "application/json", ...(init.headers ?? {}) } });
+}
+
+/** null = endpoint missing (404) or server unreachable. */
+export async function getTasks(user: UserId): Promise<Task[] | null> {
+  try {
+    const res = await rawFetch(`/tasks?user=${encodeURIComponent(user)}`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { tasks?: Task[] };
+    return Array.isArray(body.tasks) ? body.tasks : [];
+  } catch {
+    return null;
+  }
+}
+
+export async function markTaskDone(id: string): Promise<void> {
+  const res = await rawFetch(`/tasks/${encodeURIComponent(id)}/done`, { method: "POST" });
+  if (!res.ok) throw new Error(`/tasks/${id}/done → HTTP ${res.status}`);
+}
+
+export async function assignTask(to: UserId, text: string): Promise<void> {
+  const body = JSON.stringify({ from: ME, to, text });
+  let res = await rawFetch("/tasks", { method: "POST", body });
+  if (res.status === 404) res = await rawFetch("/assign", { method: "POST", body });
+  if (!res.ok) throw new Error(`assign → HTTP ${res.status}`);
 }

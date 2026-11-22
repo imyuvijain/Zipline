@@ -2,13 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AskRequest, Board } from "../../shared/types.ts";
 import { SIM_TEAMS, TEAM } from "./api.ts";
 import { Feed, MemberStack, type Focus } from "./Board.tsx";
-import { ChatPanel } from "./ChatPanel.tsx";
+import { Profile } from "./Profile.tsx";
+import { TasksPage } from "./Tasks.tsx";
 import { Dock, type DockItem } from "./Dock.tsx";
 import { useBoards } from "./useBoards.ts";
 import { SameTaskCards } from "./SameTask.tsx";
 import { startServerEvents } from "./serverEvents.ts";
 import { startPingListener } from "./pings.ts";
 import { IncomingPings } from "./IncomingPings.tsx";
+import { IncomingCall } from "./call/IncomingCall.tsx";
 
 const ALL_TEAMS = [TEAM, ...SIM_TEAMS];
 const DEPT = "dept:engineering";
@@ -25,6 +27,7 @@ export default function App() {
   const [view, setView] = useState<string>(TEAM);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [focus, setFocus] = useState<Focus>(null);
+  const [page, setPage] = useState<"board" | "tasks">("board");
   const clearTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const shown: Board[] = view === DEPT ? ALL_TEAMS.map((t) => boards[t]).filter(Boolean) : boards[view] ? [boards[view]] : [];
@@ -48,25 +51,31 @@ export default function App() {
         <header className="topbar">
           <h1>{META[view].label}</h1>
           {META[view].sim && <span className="tag sim">sim</span>}
+          <nav className="page-nav" aria-label="Page">
+            <button className={page === "board" ? "on" : ""} onClick={() => setPage("board")}>Board</button>
+            <span className="page-sep">|</span>
+            <button className={page === "tasks" ? "on" : ""} onClick={() => setPage("tasks")}>Today's tasks</button>
+          </nav>
           <span className={`dot ${source === "live" ? "active" : "idle"} source`} title={source === "live" ? "Live" : "Server unreachable: fixtures"} />
+          <Profile />
         </header>
-        <div className="main-scroll" key={view}>
-          <IncomingPings nameOf={nameOf} onOpen={setExpanded} />
-          <SameTaskCards nameOf={nameOf} />
-          <MemberStack boards={shown} focus={focus} expanded={expanded} onExpand={setExpanded} onFocus={onFocus} />
-          <Feed items={shown.flatMap((b) => b.feed)} />
-        </div>
-        <Dock items={DOCK_ORDER.map((id) => ({ id, ...META[id] }))} selected={view} onSelect={(v) => { setView(v); setExpanded(null); }} />
+        {page === "board" ? (
+          <>
+            <div className="main-scroll" key={view}>
+              <IncomingPings nameOf={nameOf} onOpen={setExpanded} />
+              <SameTaskCards nameOf={nameOf} />
+              <MemberStack boards={shown} focus={focus} expanded={expanded} onExpand={setExpanded} onFocus={onFocus} />
+              <Feed items={shown.flatMap((b) => b.feed)} />
+            </div>
+            <Dock items={DOCK_ORDER.map((id) => ({ id, ...META[id] }))} selected={view} onSelect={(v) => { setView(v); setExpanded(null); }} />
+          </>
+        ) : (
+          <div className="main-scroll">
+            <TasksPage board={boards[TEAM]} />
+          </div>
+        )}
       </main>
-      <ChatPanel
-        members={allMembers}
-        shown={shown.flatMap((b) => b.members)}
-        defaultTarget={view === DEPT ? "dept" : "team"}
-        scopeLabel={view === DEPT ? "engineering" : view}
-        onFocus={onFocus}
-      />
-      {/* Yuvi's <IncomingCall/> (web/src/call/) mounts here. It can listen with
-          onServerEvent("incoming_call", ...) from ./serverEvents.ts. */}
+      <IncomingCall />
     </div>
   );
 }

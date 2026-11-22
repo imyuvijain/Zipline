@@ -1,0 +1,171 @@
+name: Verify Maxim's live scout
+on:
+  push:
+    branches: [p1/scout-live-check]
+permissions:
+  contents: read
+jobs:
+  live-scout:
+    if: contains(github.event.head_commit.message, 'Verify live scout')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SERVER_URL: https://3ff1b48a-5050-45ea-bb1c-0147135145cc.mtm.sh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Type-check the merged scout
+        working-directory: scout
+        run: npm ci && npm run check
+      - name: Ask Maxim's Mac twice through Maritime
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { setTimeout as sleep } from 'node:timers/promises';
+          const base = process.env.SERVER_URL;
+          async function get(path, init) {
+            const res = await fetch(new URL(path, base), { ...init, signal: AbortSignal.timeout(30000) });
+            assert.ok(res.ok, path + ' returned ' + res.status);
+            return res.json();
+          }
+          const health = await get('/health');
+          assert.ok(health.online.includes('maxim'), 'Maxim is disconnected');
+          const board = await get('/board');
+          const maxim = board.members.find(m => m.user === 'maxim');
+          assert.equal(maxim.state, 'active');
+          assert.ok(maxim.area?.startsWith('repo:team23-hack'), 'Missing project claim');
+          for (let i = 0; i < 2; i++) {
+            const start = performance.now();
+            const answer = await get('/ask', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ asker: 'scout-check', target: 'maxim', question: 'What is the exact filename of the most recent saved project file?' })
+            });
+            assert.equal(answer.cached, false);
+            assert.ok(answer.answer.length > 0 && answer.answer.length <= 300);
+            assert.ok(answer.sources.some(s => /maxim.*laptop/i.test(s.label) && !/last update/i.test(s.label)), 'No fresh laptop source');
+            assert.doesNotMatch(answer.answer, /unavailable|offline|didn.t answer|no recent local activity/i);
+            console.log('Live ask %d succeeded in %d ms (%d characters).', i+1, Math.round(performance.now()-start), answer.answer.length);
+            if (i === 0) await sleep(20000);
+          }
+          JS
+  merged-project:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Keep the tested main revision available for local checkout
+        run: git bundle create "$RUNNER_TEMP/zipline-main.bundle" refs/heads/main
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tested-main
+          path: ${{ runner.temp }}/zipline-main.bundle
+          retention-days: 1
+      - name: Type-check the scout
+        working-directory: scout
+        run: npm ci && npm run check
+      - name: Build the web client
+        working-directory: web
+        run: npm ci && npm run build
+      - name: Test the isolated server over HTTP and WebSocket
+        working-directory: server
+        run: |
+          npm ci
+          npm run typecheck
+          export DB_PATH="$RUNNER_TEMP/zipline-smoke.db"
+          export SERVER_URL=http://127.0.0.1:8787
+          npm start >/tmp/zipline-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..40}; do
+            curl -fsS "$SERVER_URL/health" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS "$SERVER_URL/health"
+          npm run smoke
+  real-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install the local Qwen model
+        run: |
+          curl --fail --show-error --silent --location https://ollama.com/install.sh -o /tmp/install-ollama.sh
+          sh /tmp/install-ollama.sh
+          if ! curl -fsS http://127.0.0.1:11434/api/version; then
+            nohup ollama serve > /tmp/ollama.log 2>&1 &
+          fi
+          for attempt in {1..40}; do
+            curl -fsS http://127.0.0.1:11434/api/version >/dev/null 2>&1 && break
+            sleep 1
+          done
+          ollama pull qwen2.5:3b
+      - name: Exercise two real model answers, the audit, and Pause
+        run: |
+          npm ci --prefix server
+          npm ci --prefix scout
+          npm --prefix scout run check:model
+          export SERVER_URL=http://127.0.0.1:8787
+          export DB_PATH="$RUNNER_TEMP/scout-server.db"
+          (cd server && npm start) >/tmp/p1-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..40}; do
+            curl -fsS "$SERVER_URL/health" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          export WATCH_REPOS="$RUNNER_TEMP/p1-work"
+          export MURMUR_USER=maxim DEMO_FAST_CLAIM=1 MURMUR_REPO_NAME=team23-hack
+          git init -q "$WATCH_REPOS"
+          mkdir -p "$WATCH_REPOS/scout" "$RUNNER_TEMP/scout-home"
+          (cd scout && HOME="$RUNNER_TEMP/scout-home" node --import tsx index.ts) > /tmp/p1-scout.log 2>&1 &
+          for attempt in {1..40}; do
+            grep -q 'watching for saves' /tmp/p1-scout.log && break
+            sleep 1
+          done
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {writeFile} from 'node:fs/promises';
+          import {setTimeout as sleep} from 'node:timers/promises';
+          const root=process.env.SERVER_URL, dash='http://127.0.0.1:4545';
+          async function json(url,options) {
+            const res=await fetch(url,{...options,signal:AbortSignal.timeout(30000)});
+            assert.ok(res.ok, 'HTTP '+res.status); return res.json();
+          }
+          async function until(fn) {
+            for(let i=0;i<30;i++){if(await fn())return;await sleep(500);}
+            assert.fail('Timed out waiting for expected state');
+          }
+          const post={method:'POST',headers:{'content-type':'application/json'}};
+          for(const file of ['billing-view.ts','customer-search.ts']){
+            await writeFile(process.env.WATCH_REPOS+'/scout/'+file,'export const checked = true\n');
+            await until(async()=>(await json(root+'/board')).members.find(x=>x.user==='maxim')?.area==='repo:team23-hack/scout');
+            const start=performance.now();
+            const answer=await json(root+'/ask',{...post,body:JSON.stringify({target:'maxim',asker:'richard',question:'Which project file was saved most recently? Give its filename.'})});
+            assert.equal(answer.cached,false);
+            console.log('Received in '+Math.round(performance.now()-start)+' ms: '+answer.answer);
+            assert.ok(answer.answer.includes(file),'Newest file missing from actual Qwen answer');
+            const audit=(await json(dash+'/api/sharing')).entries[0];
+            assert.equal(audit.text,answer.answer);assert.ok(audit.refs.includes('file:scout/'+file));
+          }
+          const control={method:'POST',headers:{'X-Zipline-Local':'1'}};
+          assert.equal((await json(dash+'/api/pause',control)).paused,true);
+          await until(async()=>!(await json(root+'/health')).online.includes('maxim'));
+          assert.equal((await json(dash+'/api/resume',control)).paused,false);
+          await until(async()=>(await json(root+'/health')).online.includes('maxim'));
+          console.log('Two real Qwen answers, matching local audits, Pause and Resume passed.');
+          JS
