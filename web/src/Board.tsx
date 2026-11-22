@@ -4,9 +4,19 @@ import { ageSec, clock, fmtAge, useNow } from "./time.ts";
 import { MemberDetail } from "./MemberDetail.tsx";
 import { MIN_SENDING_MS, usePings } from "./pings.ts";
 
-// One slow back-and-forth; repeated so the shake spans the whole ping (MIN_SENDING_MS, the "Pinging" bar).
-const SHAKE: Keyframe[] = [0, -4, 0, 4, 0].map((x) => ({ transform: `translateX(${x}px)` }));
-const SHAKE_CYCLE_MS = 600;
+// One continuous pendulum swing (0.6s per back-and-forth) lasting the whole ping (MIN_SENDING_MS):
+// starts and ends at rest, only slows at the extremes, so it never reads as separate shakes.
+const SINE_OUT = "cubic-bezier(.61, 1, .88, 1)";
+const SINE_IN_OUT = "cubic-bezier(.37, 0, .63, 1)";
+const SINE_IN = "cubic-bezier(.12, 0, .39, 0)";
+const SHAKE: Keyframe[] = [
+  { transform: "translateX(0)", offset: 0, easing: SINE_OUT },
+  { transform: "translateX(-4px)", offset: 1 / 8, easing: SINE_IN_OUT },
+  { transform: "translateX(4px)", offset: 3 / 8, easing: SINE_IN_OUT },
+  { transform: "translateX(-4px)", offset: 5 / 8, easing: SINE_IN_OUT },
+  { transform: "translateX(4px)", offset: 7 / 8, easing: SINE_IN },
+  { transform: "translateX(0)", offset: 1 },
+];
 
 /** Small one-shot shake whenever `trigger` changes (skips the first render and reduced-motion users). */
 function useShake(el: React.RefObject<HTMLElement | null>, trigger: string | number | undefined) {
@@ -14,7 +24,7 @@ function useShake(el: React.RefObject<HTMLElement | null>, trigger: string | num
   useEffect(() => {
     if (first.current) { first.current = false; return; }
     if (trigger === undefined || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    el.current?.animate(SHAKE, { duration: SHAKE_CYCLE_MS, iterations: MIN_SENDING_MS / SHAKE_CYCLE_MS, easing: "ease-in-out" });
+    el.current?.animate(SHAKE, { duration: MIN_SENDING_MS, easing: "linear" });
   }, [trigger, el]);
 }
 import type { AskRequest } from "../../shared/types.ts";
