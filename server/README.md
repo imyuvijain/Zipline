@@ -19,6 +19,7 @@ npm run smoke        # with the server running: fake scouts + every endpoint
 | GET | `/teams` | `[{team, sim}]` for the dept tab. |
 | POST | `/ask` | `AskRequest` (+ optional `team`). Person: forwards laptop summary (10s timeout, offline fallback). `team`/`dept`: Claude Haiku over summaries, 3-min cache, plain digest if no API key. |
 | GET | `/asks?user=` | Who asked about `user` and exactly what was sent (for the localhost:4545 page). |
+| POST | `/ping` | `PingRequest` `{from, to, text?}` → `{ok, delivered}`. Pushes `{type:"ping", from, text?, at}` to the target's laptop + web tabs. |
 | POST | `/fail` | `FailEntry`. Later claimers of an overlapping area get a `fail` alert. |
 | POST | `/seed` | Sim teams: `{team, members:[{user,name,area,state,summary,refs,minutesAgo}], feed?}` or an array of those. |
 | GET | `/health` | `{ok, online, teams}` |

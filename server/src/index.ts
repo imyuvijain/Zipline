@@ -5,7 +5,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
-import type { AskRequest, Board, Claim, FailEntry, OverlapAnswer, ServerToScout } from "../../shared/types.ts";
+import type { AskRequest, Board, Claim, FailEntry, OverlapAnswer, PingRequest, ServerToScout } from "../../shared/types.ts";
 import * as db from "./db.ts";
 import * as hub from "./hub.ts";
 import { handleAsk } from "./ask.ts";
@@ -106,6 +106,19 @@ app.post<{ Body: AskRequest }>("/ask", async (req, reply) => {
 app.get<{ Querystring: { user?: string } }>("/asks", async (req, reply) => {
   if (!req.query.user) return reply.code(400).send(bad("user is required"));
   return db.asksAbout(req.query.user);
+});
+
+// ---------- ping (web "nudge" button) ----------
+app.post<{ Body: PingRequest }>("/ping", async (req, reply) => {
+  const p = req.body;
+  if (!p?.from || !p?.to) return reply.code(400).send(bad("from and to are required"));
+  const to = db.getUser(p.to);
+  if (!to) return reply.code(404).send(bad(`unknown user ${p.to}`));
+  const text = p.text ? String(p.text).slice(0, 200) : undefined;
+  const delivered = hub.send(p.to, { type: "ping", from: p.from, ...(text ? { text } : {}), at: new Date().toISOString() });
+  const fromName = db.getUser(p.from)?.name ?? p.from;
+  db.addFeed(to.team, "ask", `${fromName} pinged ${to.name}${text ? `: "${text.slice(0, 60)}"` : ""}`);
+  return { ok: true, delivered };
 });
 
 // ---------- fail (stretch) ----------

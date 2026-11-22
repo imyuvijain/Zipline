@@ -62,6 +62,13 @@ const r4 = await post("/claim", { user: "anshi", area: "repo:team23-hack/server/
 check("1-folder-deep share is not a candidate", r4.checking === 0, r4);
 check("overlaps list", (await get("/overlaps")).length === 1);
 
+// /ping: web nudge -> target laptop + web tabs
+const pr = await post("/ping", { from: "maxim", to: "richard", text: "got a sec?" });
+await sleep(200);
+check("ping delivered", pr.ok === true && pr.delivered === true, pr);
+check("ping reaches web tab", richardWeb.got.some((m) => m.type === "ping" && m.from === "maxim" && m.text === "got a sec?"), richardWeb.got);
+check("ping unknown user 404s", (await post("/ping", { from: "maxim", to: "nobody" })).ok === false);
+
 const board = await get("/board");
 const bm = board.members.find((m: any) => m.user === "maxim");
 check("board shows maxim active in area", bm?.state === "active" && bm?.area?.includes("server/export"), bm);
