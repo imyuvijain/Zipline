@@ -11,7 +11,8 @@ function clean(value: unknown, limit: number) {
 export function buildEvidence(rows: Activity[]) {
   const evidence: object[] = []
   const refs = new Map<number, string>()
-  let remaining = 14_000
+  const seen = new Set<string>()
+  let remaining = 5_500
   for (const row of rows) {
     let detail: Record<string, unknown>
     try {
@@ -45,7 +46,10 @@ export function buildEvidence(rows: Activity[]) {
         if (!command || !Number.isInteger(detail.exitCode)) continue
         const executable = command.match(/^\s*([\w.-]{1,48})(?=\s|$)/)?.[1]
         entry = { id, at, command, exitCode: detail.exitCode }
-        if (executable) ref = `command:${executable}`
+        if (executable) {
+          const testCommand = command.trim().match(/^(?:npm|pnpm|yarn) (?:run )?(?:test|build|check|lint)(?=\s|$)/)?.[0]
+          ref = `cmd:${testCommand ?? executable} (exit ${detail.exitCode})`
+        }
         break
       }
       case 'git-change':
@@ -57,8 +61,12 @@ export function buildEvidence(rows: Activity[]) {
       default:
         continue
     }
-    remaining -= JSON.stringify(entry).length
-    if (remaining < 0) break
+    const fingerprint = JSON.stringify(entry, (key, value) => key === 'at' || key === 'id' ? undefined : value)
+    if (seen.has(fingerprint)) continue
+    const length = JSON.stringify(entry).length
+    if (length > remaining) continue
+    seen.add(fingerprint)
+    remaining -= length
     evidence.push(entry)
     if (ref) refs.set(id, ref)
   }

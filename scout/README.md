@@ -1,75 +1,33 @@
-# Zipline scout · first claim
+# Zipline laptop scout
 
-From the checkout root, with Node 20 or Node 22.13+ and Git installed:
+Use these steps on each teammate’s Mac. Start in the Git checkout you want to watch. Install Git, Node 22.13+ and Ollama, then open Ollama. Node 20.19+ also works with a working better-sqlite3 native binding.
 
 ```sh
 export WATCH_REPOS="$PWD"
-export MURMUR_USER=maxim
-export SERVER_URL=http://localhost:8787
+export MURMUR_USER=maxim  # change to anshi, richard or yuvi on their laptop
+export SERVER_URL=https://3ff1b48a-5050-45ea-bb1c-0147135145cc.mtm.sh
+ollama pull qwen2.5:3b
 cd scout
 npm ci
 npm run check
-npm start
+npm run check:model
+DEMO_FAST_CLAIM=1 npm start
 ```
 
-The scout loads settings from the repo-root `.env` when present. Explicitly
-exported variables take precedence. Set `SERVER_URL` to Anshi's deployment
-when available. `WATCH_REPOS` accepts colon-separated checkout paths. Relative
-paths in `.env` are resolved from the repo root. On macOS, grant your terminal Accessibility and
-allow it to control System Events under Privacy & Security → Automation.
+The model check asks the installed Qwen model about an example file using the scout’s normal prompt and checks the answer and file citation. It warms the model for the first live ask. The scout calls the loopback Ollama API and keeps the model loaded for five minutes after each ask. Set `OLLAMA_URL` to override `http://127.0.0.1:11434` with another loopback address.
 
-To collect commands, open an interactive zsh and source `scout/murmur.zsh` by
-its absolute path. The hook captures commands started inside watched repos and their exit codes. If the scout was killed abruptly and its
-socket remains, confirm it has stopped before removing `~/.murmur/scout.sock`.
+For local server development use `SERVER_URL=http://localhost:8787`. The scout also reads the repo-root `.env`. Exported values take precedence. `WATCH_REPOS` accepts colon-separated Git checkouts. Relative paths in the file resolve from the repo root. A single checkout may override its origin-derived display name with `MURMUR_REPO_NAME`.
 
-After the watcher reports ready, create or save a file under `scout/`. Keep that
-folder and branch dominant for 15 seconds, then open `$SERVER_URL/board` and
-look for Maxim and `repo:team23-hack/scout`. The repo name comes from Git
-origin, with the checkout directory as a fallback. Set `MURMUR_REPO_NAME` to
-override it for a single checkout. Heartbeats begin at startup and repeat
-every 15 seconds. For a demo, run `DEMO_FAST_CLAIM=1 npm start`. This skips
-the debounce and uses saves observed in that run to pick the area, so the first
-real save can claim immediately.
+## Verify one laptop
 
-Modern Node uses its built-in SQLite. On Node 24, `npm ci --omit=optional`
-would also omit platform packages used by tsx, so use plain `npm ci` and
-let npm skip the optional better-sqlite3 binding if its build fails.
-On Node 20, better-sqlite3 must install successfully.
+1. Open `http://localhost:4545` and check the displayed username. For a real demo, allow the terminal to control System Events under macOS Privacy & Security → Automation and Accessibility. For shell commands and exit codes, source the absolute path to `scout/murmur.zsh` in the interactive zsh session you use for the demo.
+2. After the watcher reports ready, save a file in the checkout. Open `$SERVER_URL/board` and find your username, folder and branch. In demo mode the first save can claim immediately. Normal mode waits for a folder and branch to stay dominant for 15 seconds. Heartbeats repeat every 15 seconds.
+3. Have a teammate ask what file you just edited. Save a different file and ask again. Each typed question samples local activity afresh. Compare the returned filename with the second edit, then open the local sharing page to see who asked, the exact answer sent and its references.
+4. Press **Pause** on the local page. The scout disconnects and stops sharing claims, answers, heartbeats and call notifications. Local collection continues. Pause survives a restart. Press **Resume**, then try another ask. The board may briefly show the previous heartbeat or a labeled last update.
+5. For the overlap rehearsal, two teammates save files in the same area and follow the board’s overlap prompt. The scout displays the server’s overlap, collision, ask and incoming-call notifications on macOS. Automated intent questions produce a one-line task description without human-ask notifications.
 
-Inspect the local buffer with:
+## What the scout shares
 
-```sh
-sqlite3 ~/.murmur/buffer.db \
-  'SELECT datetime(at/1000, "unixepoch"), kind, folder, detail FROM activity ORDER BY id DESC LIMIT 10;'
-```
+The location is the most common folder across the last ten retained saves, with the newest save breaking a tie. A claim contains the location, branch and up to five distinct repo-relative file paths ranked by save count. On request the scout shares up to 300 characters and grounded file, commit or command references. If a model request fails, typed asks report the failure and intent checks time out.
 
-The scout removes expired rows while it runs, including when idle. Secret
-markers cause the entire matching field to be replaced with `[REDACTED]`
-before insertion. The zsh hook also redacts matching commands at capture.
-Only claim and heartbeat JSON leave the laptop. For equal folder counts, the most recently saved folder wins.
-
-Each claim sends up to five distinct repo-relative file paths from saves in
-the claimed folder during the last 30 minutes. Paths rank by save frequency,
-with the most recent save breaking ties. Paths containing secret markers are
-omitted from `Claim.files`.
-
-## One-person asks
-
-Install Ollama on the scout laptop, run `ollama serve` if it is not already
-running, and download the model once with `ollama pull qwen2.5:3b`. For the
-demo, warm the model with `ollama run qwen2.5:3b "Reply with OK"` before the
-first ask. The scout calls the local Ollama API and keeps the model loaded for
-five minutes. `OLLAMA_URL` defaults to `http://127.0.0.1:11434` and accepts
-only loopback HTTP(S) URLs. The API request rejects redirects.
-
-Start the scout as above, save a file, then ask about Maxim from the board’s
-one-person ask flow. The scout connects to the server's `/ws?user=maxim`,
-reconnects after a drop, and refreshes saves, Git and the active window before
-each ask. Only the summary and its grounded references are sent to the server.
-The scout displays macOS notifications for server messages about asks, alerts,
-overlap checks and incoming calls. Intent asks return a one-line task and
-leave ask notifications to the server.
-
-If Ollama fails or misses the local deadline, a typed ask returns an
-unavailable summary without references. A failed intent is left unanswered
-so the server can handle it as unavailable.
+Raw window titles, commands, diffs and activity history stay in `~/.murmur/buffer.db`. The scout prunes activity and the local sharing log after 30 minutes and masks matching secret markers before writing activity. The local page binds to loopback. If the shell socket is unavailable, other collectors can still run. If the page cannot start, the scout exits before sharing. After an abrupt exit, confirm no scout is running before removing a stale `~/.murmur/scout.sock`.

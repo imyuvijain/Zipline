@@ -13,6 +13,7 @@ import { watch } from 'chokidar'
 import { secret, redact, localOllama } from './ollama.js'
 import { collectFreshSaves } from './fresh-saves.js'
 import type { Activity } from './evidence.js'
+import { localSharing, startSharingPage } from './sharing.js'
 import { connectScout } from './ws.js'
 
 const exec = promisify(execFile)
@@ -91,6 +92,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS activity_at ON activity(at);
   CREATE INDEX IF NOT EXISTS activity_kind_id ON activity(kind, id);
 `)
+const sharing = localSharing(db, user)
 const insert = db.prepare('INSERT INTO activity (at, kind, repo, folder, detail) VALUES (?, ?, ?, ?, ?)')
 const prune = db.prepare('DELETE FROM activity WHERE at <= ?')
 const recent = db.prepare("SELECT repo, folder FROM activity WHERE kind = 'save' AND at >= ? ORDER BY id DESC LIMIT 10")
@@ -112,9 +114,12 @@ function record(kind: string, detail: Record<string, string | number>, repo?: st
 }
 
 function expire() {
-  prune.run(Date.now() - retention)
+  const cutoff = Date.now() - retention
+  prune.run(cutoff)
+  sharing.expire(cutoff)
 }
 
+const gitPaths = ['.', ':(exclude,glob)**/.worktrees', ':(exclude,glob)**/.worktrees/**']
 const branches = new Map<string, string>()
 const gitState = new Map<string, { head: string; fingerprint: string }>()
 
@@ -129,8 +134,8 @@ async function collectGit(repo: string, fresh = false, signal?: AbortSignal) {
     branches.set(repo, redact(branch))
 
     const [status, diff] = await Promise.all([
-      git(repo, 'status', '--porcelain=v1', '--untracked-files=all'),
-      git(repo, 'diff', '--no-ext-diff', '--no-textconv', ...(head ? [head] : ['--cached']), '--')
+      git(repo, 'status', '--porcelain=v1', '--untracked-files=all', '--', ...gitPaths),
+      git(repo, 'diff', '--no-ext-diff', '--no-textconv', ...(head ? [head] : ['--cached']), '--', ...gitPaths)
         .catch(() => '[Diff unavailable]')
     ])
     const fingerprint = createHash('sha256').update(status).update('\0').update(diff).digest('hex')
@@ -141,7 +146,7 @@ async function collectGit(repo: string, fresh = false, signal?: AbortSignal) {
     }
     if (head && previous && head !== previous.head) {
       const commits = await git(repo, 'log', '-20', '--format=%H %s',
-        previous.head ? `${previous.head}..${head}` : head)
+        previous.head ? `${previous.head}..${head}` : head, '--', ...gitPaths)
       signal?.throwIfAborted()
       if (commits) record('git-commit', { branch, head, commits }, repo)
     }
@@ -178,19 +183,22 @@ async function collectWindow(fresh = false, signal?: AbortSignal) {
 }
 
 async function post(path: '/heartbeat' | '/claim', body: object) {
+  const permission = sharing.signal
+  if (permission.aborted) return false
   try {
     const response = await fetch(new URL(path, endpoint), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
       redirect: 'error',
-      signal: AbortSignal.timeout(5_000)
+      signal: AbortSignal.any([permission, AbortSignal.timeout(5_000)])
     })
     await response.body?.cancel()
+    if (permission.aborted) return false
     if (response.ok) return true
     console.error(`${path} returned HTTP ${response.status}.`)
   } catch {
-    console.error(`${path} is unavailable.`)
+    if (!permission.aborted) console.error(`${path} is unavailable.`)
   }
   return false
 }
@@ -224,18 +232,20 @@ async function evaluateClaim() {
   const name = save && repoNames.get(save.repo)
   if (!save || !branch || !name || save.folder === '[REDACTED]') {
     candidate = undefined
+    sent = undefined
     return
   }
   const area = redact(`repo:${name}${save.folder ? '/' + save.folder : ''}`)
   if (area === '[REDACTED]' || branch === '[REDACTED]') {
     candidate = undefined
+    sent = undefined
     return
   }
   if (candidate?.repo !== save.repo || candidate.area !== area || candidate.branch !== branch) {
     candidate = { repo: save.repo, area, branch, since: new Date().toISOString(), started: performance.now() }
   }
   const key = JSON.stringify([area, branch])
-  if (claimInFlight || key === sent || performance.now() - candidate.started < claimDelay) return
+  if (sharing.paused || claimInFlight || key === sent || performance.now() - candidate.started < claimDelay) return
   claimInFlight = true
   try {
     const files = claimFiles(save.repo, save.folder, cutoff)
@@ -260,13 +270,17 @@ const commands = createServer(socket => {
     if (!cwd || !isAbsolute(cwd) || !/^\d{1,3}$/.test(code) || Number(code) > 255 ||
         !command || extra.length) return
     const repo = repoFor(cwd)
-    if (repo) record('command', { command, exitCode: Number(code), cwd }, repo)
+    if (repo && !ignored(cwd)) record('command', { command, exitCode: Number(code), cwd }, repo)
   })
 })
 await new Promise<void>((resolve, reject) => {
   commands.once('error', reject)
   commands.listen(socketPath, resolve)
-}).catch(() => {
+}).catch((err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPERM' || err.code === 'EACCES') {
+    console.error('Shell command capture is unavailable. Socket access was denied.')
+    return
+  }
   throw new Error('Cannot open scout socket. Check for a running scout or a stale ~/.murmur/scout.sock.')
 })
 
@@ -274,7 +288,7 @@ const startedWatching = Date.now()
 const seenSaves = new Map<string, { stamp: string; at: number }>()
 function ignored(path: string) {
   return path === home || path.startsWith(home + sep) ||
-    relative(repoFor(path) ?? path, path).split(sep).some(part => part === '.git' || part === 'node_modules')
+    relative(repoFor(path) ?? path, path).split(sep).some(part => part === '.git' || part === '.worktrees' || part === 'node_modules')
 }
 function captureSave(path: string, stats?: Stats) {
   const repo = repoFor(path)
@@ -293,10 +307,20 @@ function captureSave(path: string, stats?: Stats) {
 }
 
 expire()
-void post('/heartbeat', { user })
-setInterval(() => void post('/heartbeat', { user }), 15_000)
 await Promise.all(repos.map(repo => collectGit(repo)))
 
+let disconnect: (() => void) | undefined
+function updateSharing() {
+  disconnect?.()
+  disconnect = undefined
+  if (sharing.paused) return
+  disconnect = connectScout(endpoint, user, ollama, refreshForAsk, sharing.record)
+  sent = undefined
+  void post('/heartbeat', { user })
+  void evaluateClaim()
+}
+const sharingPage = await startSharingPage(Number(process.env.MURMUR_SHARING_PORT ?? 4545), sharing,
+  () => candidate?.area ?? null, updateSharing)
 const watcher = watch(repos, {
   ignoreInitial: true,
   followSymlinks: false,
@@ -331,7 +355,8 @@ async function refreshForAsk(signal: AbortSignal) {
   return answerRows.all(Date.now() - retention) as Activity[]
 }
 
-const disconnect = connectScout(endpoint, user, ollama, refreshForAsk)
+updateSharing()
+setInterval(() => void post('/heartbeat', { user }), 15_000)
 void sample()
 setInterval(() => {
   const cutoff = Date.now() - retention
@@ -346,7 +371,8 @@ setInterval(() => {
 }, 1_000)
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
-    disconnect()
+    disconnect?.()
+    sharingPage.close()
     void watcher.close()
     commands.close(() => process.exit(0))
   })

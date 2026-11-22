@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Sharing · Zipline Scout</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --paper: #f7f7f2; --ink: #17231d; --card: #fff; --muted: #506259;
+      --line: #d2d9d1; --accent: #225444; --wash: #e5efe6; --error: #942d21;
+      font: 100%/1.55 Inter, system-ui, sans-serif;
+      color: var(--ink); background: var(--paper);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #121a16; --ink: #eff4ec; --card: #1a251f; --muted: #b2c0b6;
+        --line: #394b40; --accent: #a6d8b8; --wash: #283e30; --error: #ffb2a8;
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box }
+    body { margin: 0 }
+    main { max-width: 54rem; margin: auto; padding: 2rem clamp(1rem, 4vw, 3rem) 4rem }
+    header { display: flex; align-items: center; gap: .6rem; color: var(--accent); font-weight: 700 }
+    .mark { display: inline-block; width: .65rem; height: 1.25rem; transform: skew(-22deg); background: currentColor }
+    h1 { margin: 2.75rem 0 1.25rem; font-size: clamp(2.4rem, 6vw, 4rem); line-height: 1; letter-spacing: -.055em }
+    h2 { margin: 2.5rem 0 .75rem; font-size: 1.35rem }
+    p, dl, ol, ul { margin: 0 }
+    .panel, .entry { background: var(--card); border: 1px solid var(--line); border-radius: .85rem; padding: clamp(1rem, 3vw, 1.5rem) }
+    .controls { display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap }
+    .state { font-weight: 700; color: var(--accent); background: var(--wash); padding: .25rem .7rem; border-radius: 2rem }
+    .state[data-paused="true"] { color: var(--ink); background: var(--paper); outline: 1px solid var(--line) }
+    button { border-radius: .45rem; border: 1px solid var(--accent); padding: .6rem 1rem; background: var(--accent); color: var(--card); font: inherit; font-weight: 650; cursor: pointer }
+    button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px }
+    button:disabled { cursor: default; opacity: .65 }
+    dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); gap: 1rem; border-top: 1px solid var(--line); padding-top: 1rem; margin-top: 1rem }
+    dt, .meta, .refs-title, #empty { color: var(--muted) }
+    dt, .meta, .refs-title { font-size: .875rem }
+    dd { margin: .15rem 0 0; font-weight: 600 }
+    #history { list-style: none; padding: 0; display: grid; gap: .75rem }
+    .entry, dd { overflow-wrap: anywhere; min-width: 0 }
+    .meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .2rem 1rem }
+    .who { color: var(--ink); font-size: 1rem; font-weight: 650 }
+    .shared-text { margin-top: .7rem; white-space: pre-wrap }
+    .refs-title { margin-top: .8rem }
+    .refs { padding-left: 1.2rem; font: .875rem/1.6 ui-monospace, monospace }
+    #notice:not(:empty), noscript { display: block; margin-top: 1rem; color: var(--error) }
+  </style>
+</head>
+<body>
+  <main>
+    <header><span class="mark" aria-hidden="true"></span> Zipline Scout</header>
+    <h1>Sharing</h1>
+    <section class="panel" aria-label="Sharing controls">
+      <div class="controls">
+        <p class="state" id="status" role="status">Connecting…</p>
+        <button id="toggle" type="button" disabled>Pause sharing</button>
+      </div>
+      <dl>
+        <div><dt>Scout</dt><dd id="user">—</dd></div>
+        <div><dt>Current area</dt><dd id="area">—</dd></div>
+      </dl>
+      <p id="notice" role="alert"></p>
+      <noscript>Enable JavaScript to view activity and control sharing.</noscript>
+    </section>
+    <section aria-labelledby="history-title">
+      <h2 id="history-title">Sharing history</h2>
+      <p id="empty">Loading activity…</p>
+      <ol id="history"></ol>
+    </section>
+  </main>
+  <script>
+    const byId = id => document.getElementById(id);
+    const statusLabel = byId('status');
+    const button = byId('toggle');
+    const notice = byId('notice');
+    const historyList = byId('history');
+    const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
+    let state;
+    let historySignature;
+    let timer;
+    let revision = 0;
+    let updating = false;
+    let actionError = '';
+
+    function node(tag, className, text) {
+      const element = document.createElement(tag);
+      element.className = className;
+      element.textContent = text;
+      return element;
+    }
+
+    function showEntry(entry) {
+      const item = node('li', 'entry', '');
+      const meta = node('div', 'meta', '');
+      const who = entry.purpose === 'intent' ? 'Intent shared with ' : 'Answer shared with ';
+      const date = new Date(entry.at);
+      const time = node('time', '', Number.isNaN(date.valueOf()) ? entry.at : dateFormat.format(date));
+      if (!Number.isNaN(date.valueOf())) time.dateTime = date.toISOString();
+      meta.append(node('span', 'who', who + entry.asker), time);
+      item.append(meta, node('p', 'shared-text', entry.text));
+      if (entry.refs.length) {
+        const refs = node('ul', 'refs', '');
+        for (const ref of entry.refs) refs.append(node('li', '', ref));
+        item.append(node('p', 'refs-title', 'Shared references'), refs);
+      }
+      return item;
+    }
+
+    function render(next) {
+      state = next;
+      const label = next.paused ? 'Sharing paused' : 'Sharing active';
+      if (statusLabel.textContent !== label) statusLabel.textContent = label;
+      statusLabel.dataset.paused = String(next.paused);
+      button.textContent = next.paused ? 'Resume sharing' : 'Pause sharing';
+      byId('user').textContent = next.user;
+      byId('area').textContent = next.area || 'No current area';
+      const signature = JSON.stringify(next.entries);
+      if (signature !== historySignature) {
+        const sorted = [...next.entries].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+        historyList.replaceChildren(...sorted.map(showEntry));
+        byId('empty').hidden = sorted.length > 0;
+        byId('empty').textContent = 'No sharing activity yet.';
+        historySignature = signature;
+      }
+    }
+
+    async function getState(path, options = {}) {
+      const response = await fetch(path, { ...options, cache: 'no-store', signal: AbortSignal.timeout(8000) });
+      if (!response.ok) throw new Error('Scout returned ' + response.status);
+      return response.json();
+    }
+
+    function schedule() {
+      clearTimeout(timer);
+      if (!document.hidden && !updating) timer = setTimeout(refresh, 3000);
+    }
+
+    async function refresh() {
+      if (updating) return;
+      clearTimeout(timer);
+      const current = ++revision;
+      try {
+        const next = await getState('/api/sharing');
+        if (current !== revision) return;
+        render(next);
+        notice.textContent = actionError;
+        button.disabled = false;
+      } catch {
+        if (current !== revision) return;
+        statusLabel.textContent = 'Scout unavailable';
+        notice.textContent = state ? 'Showing the last update. Reconnecting…' : 'Waiting for the local Scout. Reconnecting…';
+        button.disabled = true;
+      } finally {
+        if (current === revision) schedule();
+      }
+    }
+
+    button.addEventListener('click', async () => {
+      if (!state || updating) return;
+      updating = true;
+      revision++;
+      clearTimeout(timer);
+      button.disabled = true;
+      actionError = '';
+      notice.textContent = '';
+      const action = state.paused ? 'resume' : 'pause';
+      try {
+        render(await getState('/api/' + action, { method: 'POST', headers: { 'X-Zipline-Local': '1' } }));
+      } catch {
+        actionError = 'Could not confirm the change. Check the sharing status and try again.';
+        notice.textContent = actionError;
+      } finally {
+        updating = false;
+        await refresh();
+      }
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) clearTimeout(timer);
+      else refresh();
+    });
+    refresh();
+  </script>
+</body>
+</html>
