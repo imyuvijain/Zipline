@@ -76,6 +76,9 @@ export interface Overlap {
 
 export interface OverlapAnswer { user: UserId; same: boolean; }
 
+// Nudge a teammate from the web app (POST /ping). Delivered to their laptop + open web tabs.
+export interface PingRequest { from: UserId; to: UserId; text?: string }
+
 // Assignments + voice catch-up calls (SPEC §2b)
 export interface Assignment {
   id: string;
@@ -110,7 +113,8 @@ export type ServerToScout =
   | { type: "alert"; kind: "collision" | "fail"; text: string; other: UserId; area: string }
   | { type: "overlap_ping"; overlapId: string; other: UserId; area: string; text: string } // "same task?"
   | { type: "asked_about_you"; asker: UserId; sent: string; at: string }
-  | { type: "incoming_call"; briefId: string; kind: BriefKind; from: UserId | "zipline"; title: string };
+  | { type: "incoming_call"; briefId: string; kind: BriefKind; from: UserId | "zipline"; title: string }
+  | { type: "ping"; from: UserId; text?: string; at: string };
 
 export type ScoutToServer =
   | { type: "summary"; askId: string; summary: Summary };
