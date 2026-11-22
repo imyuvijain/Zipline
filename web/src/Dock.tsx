@@ -1,12 +1,11 @@
-export interface DockItem { id: string; label: string; glyph: string; hue: number; sim?: boolean; divider?: boolean }
+export interface DockItem { id: string; label: string; glyph: string; hue: number; sim?: boolean }
 
 /** macOS-style dock: icons magnify on hover, click selects a team. */
 export function Dock({ items, selected, onSelect }: { items: DockItem[]; selected: string; onSelect: (id: string) => void }) {
   return (
     <nav className="dock-wrap" aria-label="Teams">
       <div className="dock" role="tablist">
-        {items.map((it) => [
-          it.divider && <span key={it.id + "-div"} className="dock-divider" aria-hidden />,
+        {items.map((it) => (
           <button
             key={it.id}
             role="tab"
@@ -18,8 +17,8 @@ export function Dock({ items, selected, onSelect }: { items: DockItem[]; selecte
             <span className="dock-tip">{it.label}</span>
             <span className="dock-icon" style={{ ["--hue" as string]: it.hue }}>{it.glyph}</span>
             <span className="dock-dot" />
-          </button>,
-        ])}
+          </button>
+        ))}
       </div>
     </nav>
   );

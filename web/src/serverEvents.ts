@@ -6,7 +6,9 @@ import { ME } from "./api.ts";
  * A tiny event bus so any component can listen, e.g. Yuvi's <IncomingCall/>:
  *   useServerEvent("incoming_call", (e) => ...)
  */
-type Ev = ServerToScout;
+/** Proposed in Slack #ai-messages; not in shared/types.ts yet. */
+export type PingEvent = { type: "ping"; from: string; text?: string; at: string };
+type Ev = ServerToScout | PingEvent;
 type Handler<T extends Ev["type"]> = (e: Extract<Ev, { type: T }>) => void;
 
 const handlers = new Map<string, Set<(e: Ev) => void>>();
