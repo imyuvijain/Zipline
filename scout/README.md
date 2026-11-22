@@ -1,6 +1,8 @@
 # Zipline laptop scout
 
-Use these steps on each teammate’s Mac. Start in the Git checkout you want to watch. Install Git, Node 22.13+ and Ollama, then open Ollama. Node 20.19+ also works with a working better-sqlite3 native binding.
+On a Mac with Git, Homebrew and Node 22.13+, run `bash scout/start-mac.sh maxim` from this checkout. Substitute your own username on each of the four laptops. An optional second argument selects a different Git checkout to watch. The launcher installs Ollama if needed, pulls Qwen, verifies a local answer and starts sharing. Leave the terminal open.
+
+For manual setup, start in the checkout you want to watch and open Ollama. Node 20.19+ also works with a working better-sqlite3 native binding.
 
 ```sh
 export WATCH_REPOS="$PWD"
