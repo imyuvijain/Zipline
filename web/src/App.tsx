@@ -7,6 +7,7 @@ import { Dock, type DockItem } from "./Dock.tsx";
 import { useBoards } from "./useBoards.ts";
 import { SameTaskCards } from "./SameTask.tsx";
 import { startServerEvents } from "./serverEvents.ts";
+import { IncomingCall } from "./call/IncomingCall.tsx";
 
 const ALL_TEAMS = [TEAM, ...SIM_TEAMS];
 const DEPT = "dept:engineering";
@@ -63,8 +64,7 @@ export default function App() {
         pending={pending}
         onFocus={onFocus}
       />
-      {/* Yuvi's <IncomingCall/> (web/src/call/) mounts here. It can listen with
-          onServerEvent("incoming_call", ...) from ./serverEvents.ts. */}
+      <IncomingCall trigger />
     </div>
   );
 }
