@@ -15,6 +15,7 @@ import { collectFreshSaves } from './fresh-saves.js'
 import type { Activity } from './evidence.js'
 import { localSharing, startSharingPage } from './sharing.js'
 import { connectScout } from './ws.js'
+import { listenShell } from './shell-socket.js'
 
 const exec = promisify(execFile)
 const user = process.env.MURMUR_USER ?? 'maxim'
@@ -273,15 +274,12 @@ const commands = createServer(socket => {
     if (repo && !ignored(cwd)) record('command', { command, exitCode: Number(code), cwd }, repo)
   })
 })
-await new Promise<void>((resolve, reject) => {
-  commands.once('error', reject)
-  commands.listen(socketPath, resolve)
-}).catch((err: NodeJS.ErrnoException) => {
+await listenShell(commands, socketPath, db).catch((err: NodeJS.ErrnoException) => {
   if (err.code === 'EPERM' || err.code === 'EACCES') {
     console.error('Shell command capture is unavailable. Socket access was denied.')
     return
   }
-  throw new Error('Cannot open scout socket. Check for a running scout or a stale ~/.murmur/scout.sock.')
+  throw err
 })
 
 const startedWatching = Date.now()
@@ -369,7 +367,7 @@ setInterval(() => {
   expire()
   void evaluateClaim()
 }, 1_000)
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
   process.once(signal, () => {
     disconnect?.()
     sharingPage.close()
