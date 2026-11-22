@@ -7,13 +7,15 @@ import { Dock, type DockItem } from "./Dock.tsx";
 import { useBoards } from "./useBoards.ts";
 import { SameTaskCards } from "./SameTask.tsx";
 import { startServerEvents } from "./serverEvents.ts";
+import { startPingListener } from "./pings.ts";
+import { IncomingPings } from "./IncomingPings.tsx";
 
 const ALL_TEAMS = [TEAM, ...SIM_TEAMS];
 const DEPT = "dept:engineering";
 const META: Record<string, Omit<DockItem, "id">> = {
   [TEAM]: { label: "Zipline", glyph: "Z", hue: 168 },
   [DEPT]: { label: "Engineering", glyph: "E", hue: 210 },
-  "team-payments": { label: "Payments", glyph: "P", hue: 260, sim: true, divider: true },
+  "team-payments": { label: "Payments", glyph: "P", hue: 260, sim: true },
   "team-infra": { label: "Infra", glyph: "I", hue: 28, sim: true },
 };
 const DOCK_ORDER = [TEAM, DEPT, ...SIM_TEAMS];
@@ -27,7 +29,7 @@ export default function App() {
 
   const shown: Board[] = view === DEPT ? ALL_TEAMS.map((t) => boards[t]).filter(Boolean) : boards[view] ? [boards[view]] : [];
   const allMembers = useMemo(() => ALL_TEAMS.flatMap((t) => boards[t]?.members ?? []), [boards]);
-  useEffect(startServerEvents, []);
+  useEffect(() => { startPingListener(); startServerEvents(); }, []);
   const nameOf = (user: string) => allMembers.find((m) => m.user === user)?.name ?? user.charAt(0).toUpperCase() + user.slice(1);
   const shownUsers = shown.flatMap((b) => b.members.map((m) => m.user));
   const shownRef = useRef(shownUsers);
@@ -49,6 +51,7 @@ export default function App() {
           <span className={`dot ${source === "live" ? "active" : "idle"} source`} title={source === "live" ? "Live" : "Server unreachable: fixtures"} />
         </header>
         <div className="main-scroll" key={view}>
+          <IncomingPings nameOf={nameOf} onOpen={setExpanded} />
           <SameTaskCards nameOf={nameOf} />
           <MemberStack boards={shown} focus={focus} expanded={expanded} onExpand={setExpanded} onFocus={onFocus} />
           <Feed items={shown.flatMap((b) => b.feed)} />

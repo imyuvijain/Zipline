@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Board, FeedItem } from "../../shared/types.ts";
 import { ageSec, clock, fmtAge, useNow } from "./time.ts";
 import { MemberDetail } from "./MemberDetail.tsx";
+import { usePings } from "./pings.ts";
 import type { AskRequest } from "../../shared/types.ts";
 
 type Member = Board["members"][number];
@@ -40,7 +41,12 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
   useEffect(() => { if (open) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [open]);
   const seen = ageSec(m.lastSeen, now);
   const focused = focus?.users.has(m.user);
-  const cls = ["member", m.state, clash && "clash", focused && `focus ${focus!.phase}`, open && "open"].filter(Boolean).join(" ");
+  const { sent, received } = usePings();
+  const out = sent[m.user];
+  const outAge = out ? (now - out.at) / 1000 : Infinity;
+  const pingedOut = out && outAge < 120;
+  const pingedMe = received.some((r) => r.from === m.user);
+  const cls = ["member", m.state, clash && "clash", focused && `focus ${focus!.phase}`, open && "open", pingedMe && "pinged-me"].filter(Boolean).join(" ");
   return (
     <li style={{ "--i": i } as CSSProperties}>
       <div className={cls} ref={ref}>
@@ -48,6 +54,9 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
           <span className="avatar" aria-hidden>
             {m.name.slice(0, 1)}
             {focused && focus!.phase === "asking" && <span className="avatar-ring" />}
+            {pingedOut && <span key={out.n} className={`ping-burst ${out.status}`} />}
+            {pingedOut && <span className={`ping-dot ${out.status}`} title={out.status === "failed" ? "Ping failed" : `Pinged ${fmtAge(outAge)}`} />}
+            {pingedMe && <span className="ping-burst incoming" />}
           </span>
           <span className="member-main">
             <span className="member-top">

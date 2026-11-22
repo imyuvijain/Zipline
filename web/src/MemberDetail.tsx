@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AskRequest, AskResponse, Board, FeedItem } from "../../shared/types.ts";
-import { ask, ME, ping } from "./api.ts";
+import { ask, ME } from "./api.ts";
+import { sendPing, usePings } from "./pings.ts";
 import { clock, fmtAge, ageSec, useNow } from "./time.ts";
 
 type Member = Board["members"][number];
@@ -32,26 +33,24 @@ function useLiveSummary(m: Member, onFocus: FocusFn) {
 
 function Pinger({ m }: { m: Member }) {
   const [text, setText] = useState("");
-  const [state, setState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  const send = async () => {
-    setState("sending");
-    try {
-      await ping(m.user, text.trim() || undefined);
-      setState("sent");
-      setText("");
-      timer.current = setTimeout(() => setState("idle"), 2500);
-    } catch {
-      setState("failed");
-    }
-  };
+  const sent = usePings().sent[m.user];
+  const now = useNow(1000);
+  const age = sent ? (now - sent.at) / 1000 : Infinity;
+  const recent = sent && sent.status !== "failed" && age < 60;
+  const coolingDown = recent && age < 2;
+  const label = sent?.status === "failed" ? "Retry" : recent ? `Pinged · ${fmtAge(age).replace(" ago", "")}` : "Ping";
   return (
-    <form className={`pinger ${state}`} onSubmit={(e) => { e.preventDefault(); if (state !== "sending") send(); }}>
+    <form
+      className={`pinger ${sent?.status === "failed" ? "failed" : recent ? "sent" : ""}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (coolingDown) return;
+        sendPing(m.user, text.trim() || undefined);
+        setText("");
+      }}
+    >
       <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Note" maxLength={140} aria-label={`Note to ${m.name}`} />
-      <button className="btn primary" disabled={state === "sending"}>
-        {state === "sent" ? "Pinged" : state === "failed" ? "Retry" : "Ping"}
-      </button>
+      <button key={sent?.n ?? 0} className={`btn primary ${sent ? "pop" : ""}`} disabled={coolingDown}>{label}</button>
     </form>
   );
 }
