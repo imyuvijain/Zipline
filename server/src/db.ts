@@ -101,6 +101,17 @@ export function loadTeamJson(path: URL) {
     const existing = getUser(m.user);
     if (!existing || existing.sim === 0) upsertUser(m.user, m.name, team.team);
   }
+  // Drop auto-registered strays (typo'd MURMUR_USER, test clients) so the board shows only the real team.
+  // They re-register if they connect again.
+  const real = team.members.map((m) => m.user);
+  const strays = (db.prepare(`SELECT user FROM users WHERE sim = 0`).all() as { user: string }[])
+    .map((r) => r.user)
+    .filter((u) => !real.includes(u));
+  for (const u of strays) {
+    db.prepare(`DELETE FROM users WHERE user = ?`).run(u);
+    db.prepare(`DELETE FROM sessions WHERE user = ?`).run(u);
+  }
+  if (strays.length) console.log(`[team] removed non-team users: ${strays.join(", ")}`);
 }
 
 // ---- sessions / state ----
