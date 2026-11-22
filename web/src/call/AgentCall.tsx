@@ -7,7 +7,7 @@ import { ME } from "../api.ts";
 
 const BASE = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? "";
 
-export interface AgentSession { signedUrl: string; agentId: string; script: string }
+export interface AgentSession { signedUrl: string; agentId: string; script: string; displayScript?: string }
 
 /** Fetch the signed URL and make sure the mic is allowed. Null means: fall back to the TTS mp3. */
 export async function prepareAgent(briefId: string): Promise<AgentSession | null> {
@@ -74,7 +74,7 @@ function AgentInner({ session, onFail, onHangUp, style: S }: Props) {
         {conv.status === "connected" ? (conv.isSpeaking ? "Zipline is speaking… (interrupt any time)" : "Listening… ask a follow-up") : `Connecting (${conv.status})…`}
       </div>
       <div style={{ ...S.script, maxHeight: 260, overflowY: "auto" }}>
-        {(lines.length ? lines : [{ who: "Zipline" as const, text: session.script }]).map((l, i) => (
+        {(lines.length ? lines : [{ who: "Zipline" as const, text: session.displayScript ?? session.script }]).map((l, i) => (
           <p key={i} style={{ margin: "6px 0" }}><b>{l.who}:</b> {l.text}</p>
         ))}
       </div>
