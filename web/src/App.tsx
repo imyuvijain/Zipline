@@ -9,6 +9,7 @@ import { SameTaskCards } from "./SameTask.tsx";
 import { startServerEvents } from "./serverEvents.ts";
 import { startPingListener } from "./pings.ts";
 import { IncomingPings } from "./IncomingPings.tsx";
+import { IncomingCall } from "./call/IncomingCall.tsx";
 
 const ALL_TEAMS = [TEAM, ...SIM_TEAMS];
 const DEPT = "dept:engineering";
@@ -65,8 +66,7 @@ export default function App() {
         scopeLabel={view === DEPT ? "engineering" : view}
         onFocus={onFocus}
       />
-      {/* Yuvi's <IncomingCall/> (web/src/call/) mounts here. It can listen with
-          onServerEvent("incoming_call", ...) from ./serverEvents.ts. */}
+      <IncomingCall trigger />
     </div>
   );
 }
