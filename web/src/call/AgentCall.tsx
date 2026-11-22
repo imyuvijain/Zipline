@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import type { AskResponse } from "../../../shared/types.ts";
 import { ME } from "../api.ts";
+import { toSpoken } from "../../../server/src/spoken.ts";
 
 const BASE = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? "";
 
@@ -28,7 +29,7 @@ async function askZipline(params: Record<string, unknown>): Promise<string> {
   const question = String(params.question ?? "What are they working on?");
   try {
     const res = await fetch(BASE + "/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ asker: ME, target, question }) });
-    return ((await res.json()) as AskResponse).answer || "Zipline has no answer for that.";
+    return toSpoken(((await res.json()) as AskResponse).answer || "Zipline has no answer for that.");
   } catch {
     return "Zipline couldn't reach the team right now.";
   }

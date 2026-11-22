@@ -26,6 +26,9 @@ function pathToWords(path: string): string {
 export function toSpoken(text: string): string {
   let s = text;
   s = s.replace(/`/g, "");
+  s = s.replace(/(\.[a-z]{1,4}):\d+(?::\d+)?\b/gi, "$1"); // drop line numbers: "ask.ts:42"
+  s = s.replace(/\bran\s+(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?:s)?\s*\(exit\s+-?[1-9]\d*\)/gi, "ran the tests and they failed");
+  s = s.replace(/\bnpm\s+(?:run\s+)?(\w+)/gi, "the $1 command");
   // "(exit 1)" -> "failed"; a clean exit says nothing.
   s = s.replace(/\s*\(exit\s+0\)/gi, "").replace(/\s*\(exit\s+-?[1-9]\d*\)/gi, " failed");
   // Areas like "repo:team23-hack/server" -> "the server area"
@@ -54,6 +57,9 @@ export function toSpoken(text: string): string {
   s = s.replace(/;\s*tried[^.]*?(,\s*(\d+) failed runs?)?(?=\.|$)/gi, (_m, _r, n) => (n ? `, and it's failed ${n} times` : ""));
   s = s.replace(/\b(returns?|returning|outputs?)\s+invalid\s+json\b/gi, "keeps giving back broken output");
   s = s.replace(/\bjson\b/gi, "jay-son").replace(/\bWS\b/g, "web socket");
+  // Catch-all: any leftover "name.ext" or ".ext" is never read as "dot tee ess".
+  s = s.replace(/\b([A-Za-z][\w-]*)\.(tsx?|jsx?|mjs|cjs|json|md|py|go|rs|ya?ml|css|html|sh|db|env|lock)\b/g, (_m, b: string) => words(b));
+  s = s.replace(/(^|\s)\.(tsx?|jsx?|json|env|md)\b/gi, "$1$2");
   s = s.replace(/\bthe the\b/gi, "the").replace(/\s+([.,;:!?])/g, "$1").replace(/\s{2,}/g, " ").trim();
   return s;
 }
