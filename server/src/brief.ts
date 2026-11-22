@@ -337,15 +337,17 @@ function ttsStream(text: string, normalize = true) {
 }
 
 // ---------- assignments (shared by /assign and POST /tasks) ----------
-type AssignBody = Omit<Assignment, "id" | "at" | "status"> & { status?: Assignment["status"] };
+type AssignBody = Omit<Assignment, "id" | "at" | "status"> & { status?: Assignment["status"]; quiet?: boolean; minutesAgo?: number };
 
 async function assign(b: AssignBody) {
   const target = db.ensureUser(b.to);
   db.ensureUser(b.from);
-  const assignment: Assignment = { id: randomUUID(), from: b.from, to: b.to, text: String(b.text).slice(0, 300), at: new Date().toISOString(), status: b.status === "done" ? "done" : "open" };
+  const assignment: Assignment = { id: randomUUID(), from: b.from, to: b.to, text: String(b.text).slice(0, 300), at: new Date(Date.now() - (Number(b.minutesAgo) || 0) * 60_000).toISOString(), status: b.status === "done" ? "done" : "open" };
   db.db.prepare(`INSERT INTO assignments (id, "from", "to", text, status, at) VALUES (?, ?, ?, ?, ?, ?)`).run(
     assignment.id, assignment.from, assignment.to, assignment.text, assignment.status, assignment.at,
   );
+  // quiet: store the task only (demo seeding) — no feed line, no brief, no incoming_call.
+  if (b.quiet) return { ok: true, assignment, delivered: false };
   db.addFeed(target.team, "assign", `${nameOf(b.from)} → ${target.name}: ${assignment.text}`);
   const brief = await createBrief({ for: b.to, kind: "assignment", assignmentId: assignment.id });
   const msg: ServerToScout = { type: "incoming_call", briefId: brief.id, kind: "assignment", from: b.from, title: `${nameOf(b.from)} assigned you a task` };
@@ -354,8 +356,31 @@ async function assign(b: AssignBody) {
   return { ok: true, assignment, brief, delivered };
 }
 
+// ---------- demo "Today's tasks" (seeded once into an empty table; DEMO_TASKS=0 disables) ----------
+const DEMO_TASKS: Array<{ to: UserId; text: string; minutesAgo: number; done?: boolean }> = [
+  { to: "maxim", text: "Fix scout restart after an interrupted session", minutesAgo: 150, done: true },
+  { to: "maxim", text: "Warm up qwen2.5:3b on your Mac before going on stage", minutesAgo: 25 },
+  { to: "maxim", text: "Show a native notification when someone pings you", minutesAgo: 70 },
+  { to: "richard", text: "Make pinged cards shake for 1.2s", minutesAgo: 140, done: true },
+  { to: "richard", text: "Take the \"phone rings\" step in the demo", minutesAgo: 15 },
+  { to: "richard", text: "Drop the richard-probe member from the live board", minutesAgo: 60 },
+  { to: "yuvi", text: "Merge everyone's branches to main before the 14:20 freeze", minutesAgo: 160, done: true },
+  { to: "yuvi", text: "Rehearse the 3-minute run of show", minutesAgo: 20 },
+  { to: "yuvi", text: "Submit the project by 14:50", minutesAgo: 10 },
+];
+async function seedDemoTasks() {
+  if (process.env.DEMO_TASKS === "0") return;
+  const n = (db.db.prepare(`SELECT COUNT(*) AS n FROM assignments`).get() as { n: number }).n;
+  if (Number(n) > 0) return;
+  for (const t of DEMO_TASKS) {
+    await assign({ from: MANAGER, to: t.to, text: t.text, minutesAgo: t.minutesAgo, status: t.done ? "done" : "open", quiet: true });
+  }
+  console.log(`[brief] seeded ${DEMO_TASKS.length} demo tasks (Today's tasks)`);
+}
+
 // ---------- routes ----------
 export default async function briefRoutes(app: FastifyInstance) {
+  await seedDemoTasks();
   const bad = (msg: string) => ({ ok: false, error: msg });
 
   const assignHandler = async (req: { body?: AssignBody }, reply: import("fastify").FastifyReply) => {
