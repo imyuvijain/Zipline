@@ -356,7 +356,7 @@ async function assign(b: AssignBody) {
   return { ok: true, assignment, brief, delivered };
 }
 
-// ---------- demo "Today's tasks" (seeded once into an empty table; DEMO_TASKS=0 disables) ----------
+// ---------- demo "Today's tasks" (seeded for anyone with no tasks yet; DEMO_TASKS=0 disables) ----------
 const DEMO_TASKS: Array<{ to: UserId; text: string; minutesAgo: number; done?: boolean }> = [
   { to: "maxim", text: "Fix scout restart after an interrupted session", minutesAgo: 150, done: true },
   { to: "maxim", text: "Warm up qwen2.5:3b on your Mac before going on stage", minutesAgo: 25 },
@@ -370,12 +370,13 @@ const DEMO_TASKS: Array<{ to: UserId; text: string; minutesAgo: number; done?: b
 ];
 async function seedDemoTasks() {
   if (process.env.DEMO_TASKS === "0") return;
-  const n = (db.db.prepare(`SELECT COUNT(*) AS n FROM assignments`).get() as { n: number }).n;
-  if (Number(n) > 0) return;
-  for (const t of DEMO_TASKS) {
+  const has = db.db.prepare(`SELECT COUNT(*) AS n FROM assignments WHERE "to" = ?`);
+  const empty = new Set(DEMO_TASKS.map((t) => t.to).filter((u) => Number((has.get(u) as { n: number }).n) === 0));
+  if (!empty.size) return;
+  for (const t of DEMO_TASKS.filter((t) => empty.has(t.to))) {
     await assign({ from: MANAGER, to: t.to, text: t.text, minutesAgo: t.minutesAgo, status: t.done ? "done" : "open", quiet: true });
   }
-  console.log(`[brief] seeded ${DEMO_TASKS.length} demo tasks (Today's tasks)`);
+  console.log(`[brief] seeded demo tasks for ${[...empty].join(", ")} (Today's tasks)`);
 }
 
 // ---------- routes ----------
