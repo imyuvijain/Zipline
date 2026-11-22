@@ -11,15 +11,15 @@ const STALE_SUMMARY_SEC = 30 * 60; // laptops only keep 30 min anyway
 
 const cache = new Map<string, { at: number; res: AskResponse }>();
 
-type Ask = AskRequest & { team?: string };
 
-export async function handleAsk(req: Ask): Promise<AskResponse> {
+
+export async function handleAsk(req: AskRequest): Promise<AskResponse> {
   const asker = String(req.asker ?? "someone");
   const question = String(req.question ?? "").trim() || "What are they working on?";
   const target = String(req.target ?? "team");
 
   if (target === "team" || target === "dept") {
-    const team = req.team ?? db.getUser(asker)?.team ?? db.DEFAULT_TEAM;
+    const team = db.getUser(asker)?.team ?? db.DEFAULT_TEAM;
     const key = `${target}:${target === "team" ? team : "*"}:${question.toLowerCase()}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) {

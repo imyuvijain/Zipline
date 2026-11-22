@@ -7,16 +7,18 @@ const post = (path: string, body: unknown) =>
   fetch(BASE + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 const get = (path: string) => fetch(BASE + path).then((r) => r.json());
 
-function scout(user: string, reply?: (q: string) => string) {
+// reply(question, purpose) -> text, or null to stay silent (exercises the timeout path)
+function scout(user: string, reply?: (q: string, purpose: string) => string | null, client = "scout") {
   const got: any[] = [];
-  const ws = new WebSocket(`${WS}/ws?user=${user}`);
+  const ws = new WebSocket(`${WS}/ws?user=${user}${client === "web" ? "&client=web" : ""}`);
   ws.onmessage = (e) => {
     const m = JSON.parse(String(e.data));
     got.push(m);
-    if (m.type === "ask" && reply) {
+    const text = m.type === "ask" && reply ? reply(m.question, m.purpose ?? "answer") : null;
+    if (text) {
       ws.send(JSON.stringify({
         type: "summary", askId: m.askId,
-        summary: { user, text: reply(m.question), refs: ["file:server/export/csv.ts"], at: new Date().toISOString() },
+        summary: { user, text, refs: ["file:server/export/csv.ts"], at: new Date().toISOString() },
       }));
     }
   };
@@ -30,20 +32,35 @@ const check = (name: string, ok: boolean, extra?: unknown) => {
   if (!ok) fails++;
 };
 
-const maxim = await scout("maxim", () => "Maxim is building the CSV export in server/export/csv.ts and fixing a failing test.");
-const richard = await scout("richard"); // never answers asks -> exercises the timeout path
+const maxim = await scout("maxim", (_q, purpose) =>
+  purpose === "intent" ? "Adding CSV export headers" : "Maxim is building the CSV export in server/export/csv.ts and fixing a failing test.");
+// Richard answers intent checks but never normal asks (exercises the timeout path).
+const richard = await scout("richard", (_q, purpose) => (purpose === "intent" ? "Fixing auth on the export endpoint" : null));
+const richardWeb = await scout("richard", undefined, "web");
 
 await post("/heartbeat", { user: "maxim" });
 await post("/heartbeat", { user: "richard" });
-check("claim maxim", (await post("/claim", { user: "maxim", area: "repo:team23-hack/server/export", since: new Date().toISOString() })).ok);
+const now = () => new Date().toISOString();
+check("claim maxim", (await post("/claim", { user: "maxim", area: "repo:team23-hack/server/export", since: now(), files: ["server/export/csv.ts"] })).ok);
 
-const r2 = await post("/claim", { user: "richard", area: "repo:team23-hack/server/export/csv", since: new Date().toISOString() });
-await sleep(200);
-check("collision alert returned to new claimer", r2.alerts?.[0]?.kind === "collision", r2);
-check("collision alert pushed over WS to richard", richard.got.some((m) => m.type === "alert"), richard.got);
-check("no alert to maxim", !maxim.got.some((m) => m.type === "alert"), maxim.got);
-const r3 = await post("/claim", { user: "richard", area: "repo:team23-hack/server/export/csv", since: new Date().toISOString() });
-check("pair muted on repeat", (r3.alerts ?? []).length === 0, r3);
+// Stage 1: shared folder 2 deep + shared file -> strong candidate. Stage 2 runs in the background.
+const r2 = await post("/claim", { user: "richard", area: "repo:team23-hack/server/export/csv", since: now(), files: ["team23-hack/server/export/csv.ts"] });
+check("stage 1 flags a candidate", r2.checking === 1, r2);
+await sleep(1500);
+const ping = richard.got.find((m) => m.type === "overlap_ping");
+check("overlap_ping to new claimer (no Claude key -> unsure -> ping)", !!ping, richard.got);
+check("overlap_ping to earlier claimer too", maxim.got.some((m) => m.type === "overlap_ping"), maxim.got);
+check("ping text names both tasks", /CSV export headers/i.test(ping?.text ?? "") && /auth/.test(ping?.text ?? ""), ping);
+check("web socket gets the ping", richardWeb.got.some((m) => m.type === "overlap_ping"), richardWeb.got);
+check("web socket never gets asks", !richardWeb.got.some((m) => m.type === "ask"), richardWeb.got);
+check("intent asks don't fire asked_about_you", !maxim.got.some((m) => m.type === "asked_about_you"), maxim.got);
+check("answer endpoint", (await post(`/overlap/${ping?.overlapId}/answer`, { user: "richard", same: false })).ok === true);
+check("answer rejects outsiders", (await post(`/overlap/${ping?.overlapId}/answer`, { user: "yuvi", same: true })).ok === false);
+const r3 = await post("/claim", { user: "richard", area: "repo:team23-hack/server/export/csv", since: now() });
+check("pair + area muted on repeat", r3.checking === 0, r3);
+const r4 = await post("/claim", { user: "anshi", area: "repo:team23-hack/server/routes", since: now() });
+check("1-folder-deep share is not a candidate", r4.checking === 0, r4);
+check("overlaps list", (await get("/overlaps")).length === 1);
 
 const board = await get("/board");
 const bm = board.members.find((m: any) => m.user === "maxim");
@@ -77,5 +94,6 @@ check("sim board", (await get("/board?team=team-payments")).members.every((m: an
 
 maxim.ws.close();
 richard.ws.close();
+richardWeb.ws.close();
 console.log(fails ? `\n${fails} FAILED` : "\nall passed");
 process.exit(fails ? 1 : 0);

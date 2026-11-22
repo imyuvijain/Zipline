@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import type { Claim, FeedItem, SessionState, Summary } from "../../shared/types.ts";
+import type { Claim, FeedItem, Overlap, SessionState, Summary } from "../../shared/types.ts";
 
 export const DEFAULT_TEAM = process.env.MURMUR_TEAM ?? "team-murmur";
 const ACTIVE_SEC = Number(process.env.ACTIVE_SEC ?? 45);
@@ -38,7 +38,22 @@ CREATE TABLE IF NOT EXISTS feed (
   kind TEXT NOT NULL, text TEXT NOT NULL, sim INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS mutes (pair TEXT PRIMARY KEY, until TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS overlaps (
+  id TEXT PRIMARY KEY, a TEXT NOT NULL, b TEXT NOT NULL, area TEXT NOT NULL, team TEXT NOT NULL,
+  verdict TEXT NOT NULL, confidence REAL NOT NULL, reason TEXT NOT NULL, tasks TEXT NOT NULL,
+  answers TEXT NOT NULL DEFAULT '{}', at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS assignments (
+  id TEXT PRIMARY KEY, "from" TEXT NOT NULL, "to" TEXT NOT NULL, text TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open', at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS briefs (
+  id TEXT PRIMARY KEY, "for" TEXT NOT NULL, kind TEXT NOT NULL, script TEXT NOT NULL,
+  sources TEXT NOT NULL DEFAULT '[]', assignment_id TEXT, audio BLOB, at TEXT NOT NULL
+);
 `);
+// Claim.files was added at 12:45; add the column to databases created before that.
+try { db.exec(`ALTER TABLE claims ADD COLUMN files TEXT`); } catch { /* already there */ }
 
 export interface UserRow { user: string; name: string; team: string; sim: number; sim_state: string | null }
 
@@ -110,16 +125,19 @@ export function stateOf(u: UserRow): SessionState {
 
 // ---- claims ----
 export function addClaim(c: Claim) {
-  db.prepare(`INSERT INTO claims (user, area, branch, since, created_at) VALUES (?, ?, ?, ?, ?)`).run(
-    c.user, c.area, c.branch ?? null, c.since ?? now(), now(),
+  const files = Array.isArray(c.files) ? c.files.slice(0, 5).map(String) : [];
+  db.prepare(`INSERT INTO claims (user, area, branch, since, created_at, files) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    c.user, c.area, c.branch ?? null, c.since ?? now(), now(), JSON.stringify(files),
   );
 }
 
 export function latestClaim(user: string): Claim | undefined {
-  const r = db.prepare(`SELECT user, area, branch, since FROM claims WHERE user = ? ORDER BY id DESC LIMIT 1`).get(user) as
-    | { user: string; area: string; branch: string | null; since: string }
+  const r = db.prepare(`SELECT user, area, branch, since, files FROM claims WHERE user = ? ORDER BY id DESC LIMIT 1`).get(user) as
+    | { user: string; area: string; branch: string | null; since: string; files: string | null }
     | undefined;
-  return r ? { user: r.user, area: r.area, branch: r.branch ?? undefined, since: r.since } : undefined;
+  return r
+    ? { user: r.user, area: r.area, branch: r.branch ?? undefined, since: r.since, files: r.files ? JSON.parse(r.files) : [] }
+    : undefined;
 }
 
 // ---- summaries ----
@@ -173,15 +191,46 @@ export function teamFeed(team: string, limit = 30): FeedItem[] {
   return rows.map((r) => ({ at: r.at, kind: r.kind, text: r.text, ...(r.sim ? { sim: true } : {}) }));
 }
 
-// ---- collision mutes (1h per person pair) ----
-export function isMuted(a: string, b: string): boolean {
-  const r = db.prepare(`SELECT until FROM mutes WHERE pair = ?`).get([a, b].sort().join("|")) as { until: string } | undefined;
+// ---- mutes (1h per person pair [+ area]) ----
+const muteKey = (a: string, b: string, area = "") => [a, b].sort().join("|") + (area ? `|${area}` : "");
+
+export function isMuted(a: string, b: string, area = ""): boolean {
+  const r = db.prepare(`SELECT until FROM mutes WHERE pair = ?`).get(muteKey(a, b, area)) as { until: string } | undefined;
   return !!r && Date.parse(r.until) > Date.now();
 }
 
-export function mute(a: string, b: string, minutes = 60) {
+export function mute(a: string, b: string, minutes = 60, area = "") {
   const until = new Date(Date.now() + minutes * 60_000).toISOString();
   db.prepare(`INSERT INTO mutes (pair, until) VALUES (?, ?) ON CONFLICT(pair) DO UPDATE SET until = excluded.until`).run(
-    [a, b].sort().join("|"), until,
+    muteKey(a, b, area), until,
   );
+}
+
+// ---- overlaps ----
+
+export function saveOverlap(o: Overlap, team: string) {
+  db.prepare(
+    `INSERT INTO overlaps (id, a, b, area, team, verdict, confidence, reason, tasks, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(o.id, o.users[0], o.users[1], o.area, team, o.verdict, o.confidence, o.reason, JSON.stringify(o.tasks), o.at);
+}
+
+export function getOverlap(id: string) {
+  const r = db.prepare(`SELECT * FROM overlaps WHERE id = ?`).get(id) as
+    | { id: string; a: string; b: string; area: string; team: string; verdict: string; confidence: number; reason: string; tasks: string; answers: string; at: string }
+    | undefined;
+  if (!r) return undefined;
+  const overlap: Overlap = {
+    id: r.id, users: [r.a, r.b], area: r.area, verdict: r.verdict as Overlap["verdict"], confidence: r.confidence,
+    reason: r.reason, tasks: JSON.parse(r.tasks), at: r.at,
+  };
+  return { overlap, team: r.team, answers: JSON.parse(r.answers) as Record<string, boolean> };
+}
+
+export function setOverlapAnswers(id: string, answers: Record<string, boolean>) {
+  db.prepare(`UPDATE overlaps SET answers = ? WHERE id = ?`).run(JSON.stringify(answers), id);
+}
+
+export function recentOverlaps(team: string, limit = 20): Overlap[] {
+  const ids = db.prepare(`SELECT id FROM overlaps WHERE team = ? ORDER BY at DESC LIMIT ?`).all(team, limit) as unknown as { id: string }[];
+  return ids.map((r) => getOverlap(r.id)!.overlap);
 }

@@ -8,8 +8,8 @@ function parse(area: string) {
 }
 
 /**
- * Two repo areas overlap when one is a whole-segment prefix of the other and they share
- * at least repo + one folder (so claiming the repo root doesn't collide with everyone).
+ * Overlap stage 1 path rule (SPEC §2c): same repo and a shared path prefix at least 2 folders
+ * deep below the repo ("server/export" counts; the repo root or "src/" alone don't).
  * Non-repo areas (docs) overlap only on an exact, case-insensitive match.
  */
 export function overlaps(a: string, b: string): boolean {
@@ -17,10 +17,32 @@ export function overlaps(a: string, b: string): boolean {
   const B = parse(b);
   if (A.kind !== B.kind) return false;
   if (A.kind !== "repo") return A.segs.join("/").toLowerCase() === B.segs.join("/").toLowerCase();
-  const n = Math.min(A.segs.length, B.segs.length);
-  if (n < 2) return false;
-  for (let i = 0; i < n; i++) if (A.segs[i] !== B.segs[i]) return false;
-  return true;
+  let common = 0;
+  while (common < A.segs.length && common < B.segs.length && A.segs[common] === B.segs[common]) common++;
+  return common >= 3; // repo name + 2 folders
+}
+
+const normFile = (f: string) => f.replace(/\\/g, "/").replace(/^file:/, "").replace(/^\.\//, "").toLowerCase();
+
+/** Files both claims list (paths compared by suffix, so absolute vs repo-relative still match). */
+export function sharedFiles(a: string[] = [], b: string[] = []): string[] {
+  const B = b.map(normFile);
+  return a.filter((f) => {
+    const x = normFile(f);
+    return B.some((y) => x === y || x.endsWith("/" + y) || y.endsWith("/" + x));
+  });
+}
+
+/** Stage 1 (no AI): is this pair a candidate, and is it a strong one? */
+export function stage1(
+  older: { area: string; branch?: string; files?: string[] },
+  newer: { area: string; branch?: string; files?: string[] },
+) {
+  const files = sharedFiles(newer.files, older.files);
+  const path = overlaps(older.area, newer.area);
+  const candidate = path || files.length > 0;
+  const strong = candidate && (files.length > 0 || (!!older.branch && older.branch === newer.branch && path));
+  return { candidate, strong, files };
 }
 
 /** "repo:team23-hack/server/export" -> "server/export"; "doc:Pricing page draft" -> "Pricing page draft". */
