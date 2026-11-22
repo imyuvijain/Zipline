@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -11,9 +11,11 @@ import {
 import type { AskRequest, Board, Source as AskSource } from "../../shared/types.ts";
 import { ask, ME } from "./api.ts";
 import { fmtAge, useNow } from "./time.ts";
+import { Mark } from "./Mark.tsx";
 
 type Member = Board["members"][number];
-interface Ctx { members: Member[]; defaultTarget: AskRequest["target"]; scopeLabel: string }
+type FocusFn = (target: AskRequest["target"], phase: "asking" | "done") => void;
+interface Ctx { members: Member[]; defaultTarget: AskRequest["target"]; scopeLabel: string; onFocus?: FocusFn }
 
 interface AskMeta {
   phase: "asking" | "done";
@@ -48,7 +50,13 @@ function makeAdapter(ctxRef: React.RefObject<Ctx>): ChatModelAdapter {
       const { target, label } = resolveTarget(question, ctxRef.current!);
       const startedAt = Date.now();
       yield { metadata: { custom: { phase: "asking", label, startedAt } satisfies AskMeta } };
-      const res = await ask({ asker: ME, target, question }, abortSignal);
+      ctxRef.current!.onFocus?.(target, "asking");
+      let res;
+      try {
+        res = await ask({ asker: ME, target, question }, abortSignal);
+      } finally {
+        ctxRef.current!.onFocus?.(target, "done");
+      }
       yield {
         content: [{ type: "text", text: res.answer }],
         metadata: {
@@ -77,13 +85,13 @@ function AssistantMessage({ message }: { message: ThreadMessage }) {
   const running = message.status?.type === "running";
   return (
     <MessagePrimitive.Root className="msg assistant">
-      <div className="msg-head"><span className="claude-mark">✳</span></div>
+      <div className="msg-head"><Mark className={`claude-mark ${running ? "pulse" : ""}`} /></div>
       {meta && running && <AskingStatus meta={meta} />}
-      <div className="msg-body"><MessagePrimitive.Parts /></div>
+      {!running && <div className="msg-body"><MessagePrimitive.Parts /></div>}
       {message.status?.type === "incomplete" && <div className="status err">No response</div>}
       {meta?.phase === "done" && (
         <div className="sources">
-          {meta.sources?.map((s, i) => <span key={i} className="src">{s.label} · {fmtAge(s.ageSec)}</span>)}
+          {meta.sources?.map((s, i) => <span key={i} className="src" style={{ "--i": i } as CSSProperties}>{s.label} · {fmtAge(s.ageSec)}</span>)}
           {meta.cached && <span className="src">cached</span>}
           {meta.fixture && <span className="src warn" title="Server unreachable; sample answer from shared/fixtures.json">fixture</span>}
           <span className="src muted">{((meta.elapsedMs ?? 0) / 1000).toFixed(1)}s</span>
@@ -101,11 +109,16 @@ function UserMessage() {
   );
 }
 
-export function ChatPanel({ members, defaultTarget, scopeLabel }: Ctx) {
-  const ctxRef = useRef<Ctx>({ members, defaultTarget, scopeLabel });
-  ctxRef.current = { members, defaultTarget, scopeLabel };
+export function ChatPanel({ members, defaultTarget, scopeLabel, onFocus, pending }: Ctx & { pending: { text: string; n: number } | null }) {
+  const ctxRef = useRef<Ctx>({ members, defaultTarget, scopeLabel, onFocus });
+  ctxRef.current = { members, defaultTarget, scopeLabel, onFocus };
   const adapter = useMemo(() => makeAdapter(ctxRef), []);
   const runtime = useLocalRuntime(adapter);
+
+  // A click on a member card sends "What's X doing?" without typing.
+  useEffect(() => {
+    if (pending) runtime.thread.append({ role: "user", content: [{ type: "text", text: pending.text }] });
+  }, [pending?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const people = members.filter((m) => !m.sim).slice(0, 2);
   const suggestions = [
     ...people.map((m) => `What's ${m.name} doing?`),
@@ -116,13 +129,12 @@ export function ChatPanel({ members, defaultTarget, scopeLabel }: Ctx) {
     <AssistantRuntimeProvider runtime={runtime}>
       <aside className="panel">
         <header className="panel-head">
-          <span className="panel-title"><span className="claude-mark">✳</span> Claude</span>
+          <span className="panel-title"><Mark className="claude-mark" /> Claude</span>
         </header>
         <ThreadPrimitive.Root className="thread">
           <ThreadPrimitive.Viewport className="viewport">
             <ThreadPrimitive.Empty>
               <div className="welcome">
-                <div className="claude-mark xl">✳</div>
                 <div className="suggestions">
                   {suggestions.map((s) => (
                     <ThreadPrimitive.Suggestion key={s} prompt={s} send className="suggestion">{s}</ThreadPrimitive.Suggestion>

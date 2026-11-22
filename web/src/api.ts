@@ -37,7 +37,13 @@ function rebase<T>(value: T, offsetMs: number): T {
   );
 }
 
+// Built once so timestamps (and feed keys) stay stable across polls.
+let fixtureCache: Record<string, Board> | null = null;
 function fixtureBoards(): Record<string, Board> {
+  return (fixtureCache ??= buildFixtureBoards());
+}
+
+function buildFixtureBoards(): Record<string, Board> {
   const base: Board = { team: fixtures.team, members: fixtures.members as Board["members"], feed: fixtures.feed as Board["feed"] };
   const latest = Math.max(...base.members.map((m) => Date.parse(m.lastSeen ?? m.since ?? "")).filter(Number.isFinite));
   const offset = Date.now() - 4000 - latest;
@@ -51,7 +57,7 @@ function fixtureBoards(): Record<string, Board> {
     [TEAM]: rebase(base, offset),
     "team-payments": sim(
       "team-payments",
-      [["dana", "Dana", "repo:payments/refunds", "active"], ["lee", "Lee", "repo:payments/webhooks", "active"], ["omar", "Omar", "doc:PCI audit checklist", "idle"]],
+      [["dana", "Dana", "repo:payments/refunds", "active"], ["lee", "Lee", "repo:payments/refunds", "active"], ["omar", "Omar", "doc:PCI audit checklist", "idle"]],
       ["Dana is in payments/refunds", "Lee: Stripe webhook retries still double-charging in staging", "Omar is in PCI audit checklist"],
     ),
     "team-infra": sim(
