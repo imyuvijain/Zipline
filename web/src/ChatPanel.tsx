@@ -9,7 +9,7 @@ import {
   type ThreadMessage,
 } from "@assistant-ui/react";
 import type { AskRequest, Board, Source as AskSource } from "../../shared/types.ts";
-import { ask, ME } from "./api.ts";
+import { ask, LOCAL_MODEL, ME } from "./api.ts";
 import { fmtAge, useNow } from "./time.ts";
 import { Mark } from "./Mark.tsx";
 import { areaLabel, clashingUsers } from "./Board.tsx";
@@ -86,7 +86,7 @@ function AssistantMessage({ message }: { message: ThreadMessage }) {
   const running = message.status?.type === "running";
   return (
     <MessagePrimitive.Root className="msg assistant">
-      <div className="msg-head"><Mark className={`claude-mark ${running ? "pulse" : ""}`} /></div>
+      <div className="msg-head"><Mark className={`model-mark ${running ? "pulse" : ""}`} /></div>
       {meta && running && <AskingStatus meta={meta} />}
       {!running && <div className="msg-body"><MessagePrimitive.Parts /></div>}
       {message.status?.type === "incomplete" && <div className="status err">No response</div>}
@@ -131,7 +131,7 @@ export function ChatPanel({ members, shown, defaultTarget, scopeLabel, onFocus }
     <AssistantRuntimeProvider runtime={runtime}>
       <aside className="panel">
         <header className="panel-head">
-          <span className="panel-title"><Mark className="claude-mark" /> Claude</span>
+          <span className="panel-title"><Mark className="model-mark" /> <span className="model-name">{LOCAL_MODEL}</span><span className="tag">local</span></span>
         </header>
         <ThreadPrimitive.Root className="thread">
           <ThreadPrimitive.Viewport className="viewport">
