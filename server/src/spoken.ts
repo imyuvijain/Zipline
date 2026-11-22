@@ -18,9 +18,9 @@ function pathToWords(path: string): string {
     if (/^[A-Z]/.test(file) || /^(makefile|dockerfile|readme)$/i.test(file)) return `the ${[...dirs, base].join(" ")}`;
     return `the ${[...dirs, base].join(" ")} folder`;
   }
-  if (dirs.length === 0) return `the ${base} file`;
-  if (segs.length === 1) return `the ${dirs[0]} ${base} file`;
-  return `the ${base} file in ${dirs[0]}`;
+  if (dirs.length === 0) return `the ${base} code`;
+  if (segs.length === 1) return `the ${dirs[0]} ${base}`;
+  return `the ${base} code in the ${dirs[0]}`;
 }
 
 export function toSpoken(text: string): string {
@@ -41,15 +41,18 @@ export function toSpoken(text: string): string {
   s = s.replace(/(?:\b(the|your|my|our|his|her|their|[A-Z][\w-]*'s)\s+)?(?<![\w/:.])((?:[\w.-]+\/)+[\w.-]*\w)/g,
     (_m, det: string | undefined, p: string) => (det && det.toLowerCase() !== "the" ? `${det} ${pathToWords(p).replace(/^the /, "")}` : pathToWords(p)));
   // Endpoints: " /board" -> " the board endpoint"
-  s = s.replace(/(?:\bthe\s+)?(^|[\s(])\/([a-z][\w-]*)(?=[\s.,;:!?)]|$)/gi, (_m, pre: string, ep: string) => `${pre}the ${words(ep)} endpoint`);
+  s = s.replace(/(?:\bthe\s+)?(^|[\s(])\/([a-z][\w-]*)(?=[\s.,;:!?)]|$)/gi, (_m, pre: string, ep: string) => `${pre}the ${words(ep)} page`);
   // Bare file names: "types.ts" -> "the types file"
-  s = s.replace(/(?:\bthe\s+)?\b([\w-]+)\.(tsx?|jsx?|mjs|json|md|py|go|rs|ya?ml|css|html|sh)\b/g, (_m, b: string) => `the ${words(b)} file`);
+  s = s.replace(/(?:\bthe\s+)?\b([\w-]+)\.(tsx?|jsx?|mjs|json|md|py|go|rs|ya?ml|css|html|sh)\b/g, (_m, b: string) => `the ${words(b)} code`);
   // 24h times: "13:30" -> "1:30", "00:15" -> "12:15"
   s = s.replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g, (_m, h: string, m: string) => {
     const n = Number(h) % 12 || 12;
     return `${n}:${m}`;
   });
   s = s.replace(/\b([a-z]+):([a-z]+)\b/g, "$1 $2"); // "format:json" -> "format json"
+  // Drop debugging tails a person wouldn't say out loud: "; tried format:json, 3 failed runs"
+  s = s.replace(/;\s*tried[^.]*?(,\s*(\d+) failed runs?)?(?=\.|$)/gi, (_m, _r, n) => (n ? `, and it's failed ${n} times` : ""));
+  s = s.replace(/\b(returns?|returning|outputs?)\s+invalid\s+json\b/gi, "keeps giving back broken output");
   s = s.replace(/\bjson\b/gi, "jay-son").replace(/\bWS\b/g, "web socket");
   s = s.replace(/\bthe the\b/gi, "the").replace(/\s+([.,;:!?])/g, "$1").replace(/\s{2,}/g, " ").trim();
   return s;

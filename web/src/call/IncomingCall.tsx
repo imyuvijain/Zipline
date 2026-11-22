@@ -91,7 +91,7 @@ export function IncomingCall({ trigger = false }: { trigger?: boolean }) {
       setMode("elevenlabs");
     } catch {
       setMode("browser");
-      speak(b.script, () => setStatus("ended"));
+      speak((b as any).spoken ?? b.script, () => setStatus("ended"));
     }
   };
 
@@ -147,7 +147,7 @@ export function IncomingCall({ trigger = false }: { trigger?: boolean }) {
           <AgentCall session={agent} onFail={agentFailed} onHangUp={hangUp} style={S} />
         ) : (
           <>
-            <p style={S.script}>{brief?.script ?? "Loading…"}</p>
+            <p style={S.script}>{(brief as any)?.spoken ?? brief?.script ?? "Loading…"}</p>
             <div style={S.chips}>
               {brief?.sources.map((s, i) => <span key={i} style={S.chip}>{s.label} · {Math.round(s.ageSec / 60)}m</span>)}
             </div>

@@ -74,7 +74,7 @@ function AgentInner({ session, onFail, onHangUp, style: S }: Props) {
         {conv.status === "connected" ? (conv.isSpeaking ? "Zipline is speaking… (interrupt any time)" : "Listening… ask a follow-up") : `Connecting (${conv.status})…`}
       </div>
       <div style={{ ...S.script, maxHeight: 260, overflowY: "auto" }}>
-        {(lines.length ? lines : [{ who: "Zipline" as const, text: session.displayScript ?? session.script }]).map((l, i) => (
+        {(lines.length ? lines : [{ who: "Zipline" as const, text: session.script }]).map((l, i) => (
           <p key={i} style={{ margin: "6px 0" }}><b>{l.who}:</b> {l.text}</p>
         ))}
       </div>

@@ -198,8 +198,8 @@ function relevantHits(forUser: string, sinceMin: number, skipAssignment?: string
     const iFeedThem = importLink([...theirs, ...areaFiles(claim?.area)], myFiles);
     let hit: Hit | undefined;
     if (same) hit = { score: 70, line: `${u.name} ${verb} ${same}, which you're working on too.` } as Hit;
-    else if (theyFeedMe) hit = { score: 65, line: `${u.name} ${verb} ${theyFeedMe.target}, which your ${theyFeedMe.importer} imports.` } as Hit;
-    else if (iFeedThem) hit = { score: 55, line: `${u.name}'s ${iFeedThem.importer} imports ${iFeedThem.target}, which you're changing, so give ${u.name} a heads-up before you break it.` } as Hit;
+    else if (theyFeedMe) hit = { score: 65, line: `${u.name} ${verb} ${theyFeedMe.target}, and your ${theyFeedMe.importer} depends on it, so check in with ${u.name} before you build on it.` } as Hit;
+    else if (iFeedThem) hit = { score: 55, line: `heads up, ${u.name}'s ${iFeedThem.importer} depends on ${iFeedThem.target}, which you're changing, so give ${u.name} a quick shout before you break it.` } as Hit;
     else if (claim && inMyArea(claim.area, theirs)) hit = { score: 40, line: `${u.name} is in your area too: ${sum ? firstSentence(sum.text) : `working in ${displayArea(claim.area)}.`}` } as Hit;
     if (hit) hits.push({ ...hit, who: u.name, source: src });
   }
@@ -282,7 +282,7 @@ function managerBrief(forUser: string, sinceMin: number): { script: string; sour
   for (const f of fails) {
     if (seenFail.has(f.user)) continue;
     seenFail.add(f.user);
-    lines.push(`${nameOf(f.user)} is blocked in ${displayArea(f.area)}: ${f.text.replace(/[.!?]$/, "")}.`);
+    lines.push(`${nameOf(f.user)} is stuck on ${displayArea(f.area)}: ${f.text.replace(/[.!?]$/, "")}.`);
     sources.push({ label: `fail ${nameOf(f.user)}`, ageSec: db.ageSec(f.at) });
     action ??= `unblock ${nameOf(f.user)} on ${displayArea(f.area)}`;
   }
@@ -296,7 +296,7 @@ function managerBrief(forUser: string, sinceMin: number): { script: string; sour
     const min = Math.round(db.ageSec(a.at) / 60);
     const late = min >= OVERDUE_MIN;
     lines.push(late
-      ? `${nameOf(a.to)}'s task "${unprefix(a.text)}" is overdue, open for ${min} minutes.`
+      ? `${nameOf(a.to)} still hasn't finished "${unprefix(a.text)}", and it's been ${min} minutes.`
       : `${nameOf(a.to)} still has "${unprefix(a.text)}" open.`);
     sources.push({ label: `assignment ${nameOf(a.to)}`, ageSec: db.ageSec(a.at) });
     if (late) action ??= `check in with ${nameOf(a.to)} on ${unprefix(a.text)}`;
