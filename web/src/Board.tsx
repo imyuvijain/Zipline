@@ -5,7 +5,7 @@ import { ageSec, clock, fmtAge, useNow } from "./time.ts";
 type Member = Board["members"][number];
 export type Focus = { users: Set<string>; phase: "asking" | "done" } | null;
 
-const areaLabel = (area?: string) => (area ? area.replace(/^repo:[^/]+\//, "").replace(/^doc:/, "") : "—");
+export const areaLabel = (area?: string) => (area ? area.replace(/^repo:[^/]+\//, "").replace(/^doc:/, "") : "—");
 
 /** Users whose area is shared with another non-offline member. */
 export function clashingUsers(members: Member[]): Set<string> {

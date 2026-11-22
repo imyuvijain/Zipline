@@ -12,6 +12,7 @@ import type { AskRequest, Board, Source as AskSource } from "../../shared/types.
 import { ask, ME } from "./api.ts";
 import { fmtAge, useNow } from "./time.ts";
 import { Mark } from "./Mark.tsx";
+import { areaLabel, clashingUsers } from "./Board.tsx";
 
 type Member = Board["members"][number];
 type FocusFn = (target: AskRequest["target"], phase: "asking" | "done") => void;
@@ -109,7 +110,7 @@ function UserMessage() {
   );
 }
 
-export function ChatPanel({ members, defaultTarget, scopeLabel, onFocus, pending }: Ctx & { pending: { text: string; n: number } | null }) {
+export function ChatPanel({ members, shown, defaultTarget, scopeLabel, onFocus, pending }: Ctx & { shown: Member[]; pending: { text: string; n: number } | null }) {
   const ctxRef = useRef<Ctx>({ members, defaultTarget, scopeLabel, onFocus });
   ctxRef.current = { members, defaultTarget, scopeLabel, onFocus };
   const adapter = useMemo(() => makeAdapter(ctxRef), []);
@@ -119,11 +120,16 @@ export function ChatPanel({ members, defaultTarget, scopeLabel, onFocus, pending
   useEffect(() => {
     if (pending) runtime.thread.append({ role: "user", content: [{ type: "text", text: pending.text }] });
   }, [pending?.n]); // eslint-disable-line react-hooks/exhaustive-deps
-  const people = members.filter((m) => !m.sim).slice(0, 2);
+  // Max 3, driven by what's on screen. A collision outranks everything (Von Restorff).
+  const clash = clashingUsers(shown);
+  const clashArea = shown.find((m) => clash.has(m.user))?.area;
+  const rank = { active: 0, idle: 1, offline: 2 } as const;
+  const people = [...shown].sort((a, b) => rank[a.state] - rank[b.state]).slice(0, clashArea ? 1 : 2);
   const suggestions = [
-    ...people.map((m) => `What's ${m.name} doing?`),
-    defaultTarget === "dept" ? "What's engineering blocked on?" : "What's the team on?",
-  ];
+    ...(clashArea ? [{ text: `Who else is on ${areaLabel(clashArea)}?`, hot: true }] : []),
+    ...people.map((m) => ({ text: `What's ${m.name} doing?`, hot: false })),
+    { text: defaultTarget === "dept" ? "What's engineering blocked on?" : "What's the team on?", hot: false },
+  ].slice(0, 3);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -137,7 +143,7 @@ export function ChatPanel({ members, defaultTarget, scopeLabel, onFocus, pending
               <div className="welcome">
                 <div className="suggestions">
                   {suggestions.map((s) => (
-                    <ThreadPrimitive.Suggestion key={s} prompt={s} send className="suggestion">{s}</ThreadPrimitive.Suggestion>
+                    <ThreadPrimitive.Suggestion key={s.text} prompt={s.text} send className={`suggestion ${s.hot ? "hot" : ""}`}>{s.text}</ThreadPrimitive.Suggestion>
                   ))}
                 </div>
               </div>

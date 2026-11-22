@@ -14,6 +14,9 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 17px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; }
+/* Barely-there grain so large dark fields don't read as flat. */
+body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 100; opacity: .035; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
 h1, h3 { margin: 0; letter-spacing: -0.015em; }
 
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
@@ -23,10 +26,10 @@ h1, h3 { margin: 0; letter-spacing: -0.015em; }
 @keyframes pulse { 50% { opacity: .45; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.app { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 32vw, 480px); height: 100vh; overflow: hidden; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 32vw, 480px); grid-template-rows: minmax(0, 1fr); height: 100vh; overflow: hidden; }
 
 /* ---------- main ---------- */
-.main { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 22px 32px 18px; }
 .topbar h1 { font-size: 30px; font-weight: 600; }
 .dot.source { margin-left: auto; }
@@ -118,6 +121,8 @@ h1, h3 { margin: 0; letter-spacing: -0.015em; }
 .suggestions { display: grid; gap: 6px; }
 .suggestion { text-align: left; background: var(--panel-input); border: 1px solid var(--panel-line); border-radius: 10px; padding: 9px 12px; cursor: pointer; color: var(--ink); font-size: 14px; transition: border-color .15s; }
 .suggestion:hover { border-color: #4a4640; }
+.suggestion.hot { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+.suggestion.hot:hover { border-color: var(--warn); filter: brightness(1.15); }
 
 .msg { display: grid; gap: 6px; }
 .msg.user { justify-items: end; }

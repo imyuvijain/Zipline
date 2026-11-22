@@ -52,6 +52,7 @@ export default function App() {
       </main>
       <ChatPanel
         members={allMembers}
+        shown={shown.flatMap((b) => b.members)}
         defaultTarget={view === DEPT ? "dept" : "team"}
         scopeLabel={view === DEPT ? "engineering" : view}
         pending={pending}
