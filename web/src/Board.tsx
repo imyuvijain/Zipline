@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Board, FeedItem } from "../../shared/types.ts";
 import { ageSec, clock, fmtAge, useNow } from "./time.ts";
 import { MemberDetail } from "./MemberDetail.tsx";
-import { usePings } from "./pings.ts";
+import { MIN_SENDING_MS, usePings } from "./pings.ts";
 
-const SHAKE: Keyframe[] = [0, -4, 4, -3, 3, -1, 0].map((x) => ({ transform: `translateX(${x}px)` }));
+// One slow back-and-forth; repeated so the shake spans the whole ping (MIN_SENDING_MS, the "Pinging" bar).
+const SHAKE: Keyframe[] = [0, -4, 0, 4, 0].map((x) => ({ transform: `translateX(${x}px)` }));
+const SHAKE_CYCLE_MS = 600;
 
 /** Small one-shot shake whenever `trigger` changes (skips the first render and reduced-motion users). */
 function useShake(el: React.RefObject<HTMLElement | null>, trigger: string | number | undefined) {
@@ -12,7 +14,7 @@ function useShake(el: React.RefObject<HTMLElement | null>, trigger: string | num
   useEffect(() => {
     if (first.current) { first.current = false; return; }
     if (trigger === undefined || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    el.current?.animate(SHAKE, { duration: 420, easing: "ease-out" });
+    el.current?.animate(SHAKE, { duration: SHAKE_CYCLE_MS, iterations: MIN_SENDING_MS / SHAKE_CYCLE_MS, easing: "ease-in-out" });
   }, [trigger, el]);
 }
 import type { AskRequest } from "../../shared/types.ts";
