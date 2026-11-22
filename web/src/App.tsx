@@ -21,7 +21,7 @@ const DOCK_ORDER = [TEAM, DEPT, ...SIM_TEAMS];
 export default function App() {
   const { boards, source } = useBoards(ALL_TEAMS);
   const [view, setView] = useState<string>(TEAM);
-  const [pending, setPending] = useState<{ text: string; n: number } | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [focus, setFocus] = useState<Focus>(null);
   const clearTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -50,17 +50,16 @@ export default function App() {
         </header>
         <div className="main-scroll" key={view}>
           <SameTaskCards nameOf={nameOf} />
-          <MemberStack boards={shown} focus={focus} onAsk={(m) => setPending((p) => ({ text: `What's ${m.name} doing?`, n: (p?.n ?? 0) + 1 }))} />
+          <MemberStack boards={shown} focus={focus} expanded={expanded} onExpand={setExpanded} onFocus={onFocus} />
           <Feed items={shown.flatMap((b) => b.feed)} />
         </div>
-        <Dock items={DOCK_ORDER.map((id) => ({ id, ...META[id] }))} selected={view} onSelect={setView} />
+        <Dock items={DOCK_ORDER.map((id) => ({ id, ...META[id] }))} selected={view} onSelect={(v) => { setView(v); setExpanded(null); }} />
       </main>
       <ChatPanel
         members={allMembers}
         shown={shown.flatMap((b) => b.members)}
         defaultTarget={view === DEPT ? "dept" : "team"}
         scopeLabel={view === DEPT ? "engineering" : view}
-        pending={pending}
         onFocus={onFocus}
       />
       {/* Yuvi's <IncomingCall/> (web/src/call/) mounts here. It can listen with

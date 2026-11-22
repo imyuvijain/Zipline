@@ -94,3 +94,10 @@ export async function answerOverlap(id: string, same: boolean): Promise<void> {
   const body: OverlapAnswer = { user: ME, same };
   await fetchJson(`/overlap/${encodeURIComponent(id)}/answer`, { method: "POST", body: JSON.stringify(body) }, 5000);
 }
+
+/** Proposed in Slack #ai-messages (not yet in shared/types.ts): POST /ping → server forwards to the person's laptop + web. */
+export interface PingRequest { from: UserId; to: UserId; text?: string }
+export async function ping(to: UserId, text?: string): Promise<void> {
+  const body: PingRequest = { from: ME, to, ...(text ? { text } : {}) };
+  await fetchJson("/ping", { method: "POST", body: JSON.stringify(body) }, 5000);
+}

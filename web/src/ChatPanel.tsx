@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { useMemo, useRef, type CSSProperties } from "react";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -110,16 +110,12 @@ function UserMessage() {
   );
 }
 
-export function ChatPanel({ members, shown, defaultTarget, scopeLabel, onFocus, pending }: Ctx & { shown: Member[]; pending: { text: string; n: number } | null }) {
+export function ChatPanel({ members, shown, defaultTarget, scopeLabel, onFocus }: Ctx & { shown: Member[] }) {
   const ctxRef = useRef<Ctx>({ members, defaultTarget, scopeLabel, onFocus });
   ctxRef.current = { members, defaultTarget, scopeLabel, onFocus };
   const adapter = useMemo(() => makeAdapter(ctxRef), []);
   const runtime = useLocalRuntime(adapter);
 
-  // A click on a member card sends "What's X doing?" without typing.
-  useEffect(() => {
-    if (pending) runtime.thread.append({ role: "user", content: [{ type: "text", text: pending.text }] });
-  }, [pending?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   // Max 3, driven by what's on screen. A collision outranks everything (Von Restorff).
   const clash = clashingUsers(shown);
   const clashArea = shown.find((m) => clash.has(m.user))?.area;
