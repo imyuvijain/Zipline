@@ -1,4 +1,4 @@
-import type { AskRequest, AskResponse, Board, UserId } from "../../shared/types.ts";
+import type { AskRequest, AskResponse, Board, OverlapAnswer, UserId } from "../../shared/types.ts";
 import fixtures from "../../shared/fixtures.json";
 
 // Same-origin by default: the Vite proxy in dev, the server itself when deployed.
@@ -37,7 +37,13 @@ function rebase<T>(value: T, offsetMs: number): T {
   );
 }
 
+// Built once so timestamps (and feed keys) stay stable across polls.
+let fixtureCache: Record<string, Board> | null = null;
 function fixtureBoards(): Record<string, Board> {
+  return (fixtureCache ??= buildFixtureBoards());
+}
+
+function buildFixtureBoards(): Record<string, Board> {
   const base: Board = { team: fixtures.team, members: fixtures.members as Board["members"], feed: fixtures.feed as Board["feed"] };
   const latest = Math.max(...base.members.map((m) => Date.parse(m.lastSeen ?? m.since ?? "")).filter(Number.isFinite));
   const offset = Date.now() - 4000 - latest;
@@ -51,7 +57,7 @@ function fixtureBoards(): Record<string, Board> {
     [TEAM]: rebase(base, offset),
     "team-payments": sim(
       "team-payments",
-      [["dana", "Dana", "repo:payments/refunds", "active"], ["lee", "Lee", "repo:payments/webhooks", "active"], ["omar", "Omar", "doc:PCI audit checklist", "idle"]],
+      [["dana", "Dana", "repo:payments/refunds", "active"], ["lee", "Lee", "repo:payments/refunds", "active"], ["omar", "Omar", "doc:PCI audit checklist", "idle"]],
       ["Dana is in payments/refunds", "Lee: Stripe webhook retries still double-charging in staging", "Omar is in PCI audit checklist"],
     ),
     "team-infra": sim(
@@ -82,4 +88,16 @@ export async function ask(req: AskRequest, signal: AbortSignal): Promise<AskResp
     await new Promise((r) => setTimeout(r, 1500));
     return { ...(fixtures.sampleAsk as AskResponse), fixture: true };
   }
+}
+
+export async function answerOverlap(id: string, same: boolean): Promise<void> {
+  const body: OverlapAnswer = { user: ME, same };
+  await fetchJson(`/overlap/${encodeURIComponent(id)}/answer`, { method: "POST", body: JSON.stringify(body) }, 5000);
+}
+
+/** Proposed in Slack #ai-messages (not yet in shared/types.ts): POST /ping → server forwards to the person's laptop + web. */
+export interface PingRequest { from: UserId; to: UserId; text?: string }
+export async function ping(to: UserId, text?: string): Promise<void> {
+  const body: PingRequest = { from: ME, to, ...(text ? { text } : {}) };
+  await fetchJson("/ping", { method: "POST", body: JSON.stringify(body) }, 5000);
 }

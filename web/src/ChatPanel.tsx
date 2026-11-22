@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, type CSSProperties } from "react";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -11,9 +11,12 @@ import {
 import type { AskRequest, Board, Source as AskSource } from "../../shared/types.ts";
 import { ask, ME } from "./api.ts";
 import { fmtAge, useNow } from "./time.ts";
+import { Mark } from "./Mark.tsx";
+import { areaLabel, clashingUsers } from "./Board.tsx";
 
 type Member = Board["members"][number];
-interface Ctx { members: Member[]; defaultTarget: AskRequest["target"]; scopeLabel: string }
+type FocusFn = (target: AskRequest["target"], phase: "asking" | "done") => void;
+interface Ctx { members: Member[]; defaultTarget: AskRequest["target"]; scopeLabel: string; onFocus?: FocusFn }
 
 interface AskMeta {
   phase: "asking" | "done";
@@ -48,7 +51,13 @@ function makeAdapter(ctxRef: React.RefObject<Ctx>): ChatModelAdapter {
       const { target, label } = resolveTarget(question, ctxRef.current!);
       const startedAt = Date.now();
       yield { metadata: { custom: { phase: "asking", label, startedAt } satisfies AskMeta } };
-      const res = await ask({ asker: ME, target, question }, abortSignal);
+      ctxRef.current!.onFocus?.(target, "asking");
+      let res;
+      try {
+        res = await ask({ asker: ME, target, question }, abortSignal);
+      } finally {
+        ctxRef.current!.onFocus?.(target, "done");
+      }
       yield {
         content: [{ type: "text", text: res.answer }],
         metadata: {
@@ -77,13 +86,13 @@ function AssistantMessage({ message }: { message: ThreadMessage }) {
   const running = message.status?.type === "running";
   return (
     <MessagePrimitive.Root className="msg assistant">
-      <div className="msg-head"><span className="claude-mark">✳</span></div>
+      <div className="msg-head"><Mark className={`claude-mark ${running ? "pulse" : ""}`} /></div>
       {meta && running && <AskingStatus meta={meta} />}
-      <div className="msg-body"><MessagePrimitive.Parts /></div>
+      {!running && <div className="msg-body"><MessagePrimitive.Parts /></div>}
       {message.status?.type === "incomplete" && <div className="status err">No response</div>}
       {meta?.phase === "done" && (
         <div className="sources">
-          {meta.sources?.map((s, i) => <span key={i} className="src">{s.label} · {fmtAge(s.ageSec)}</span>)}
+          {meta.sources?.map((s, i) => <span key={i} className="src" style={{ "--i": i } as CSSProperties}>{s.label} · {fmtAge(s.ageSec)}</span>)}
           {meta.cached && <span className="src">cached</span>}
           {meta.fixture && <span className="src warn" title="Server unreachable; sample answer from shared/fixtures.json">fixture</span>}
           <span className="src muted">{((meta.elapsedMs ?? 0) / 1000).toFixed(1)}s</span>
@@ -101,31 +110,36 @@ function UserMessage() {
   );
 }
 
-export function ChatPanel({ members, defaultTarget, scopeLabel }: Ctx) {
-  const ctxRef = useRef<Ctx>({ members, defaultTarget, scopeLabel });
-  ctxRef.current = { members, defaultTarget, scopeLabel };
+export function ChatPanel({ members, shown, defaultTarget, scopeLabel, onFocus }: Ctx & { shown: Member[] }) {
+  const ctxRef = useRef<Ctx>({ members, defaultTarget, scopeLabel, onFocus });
+  ctxRef.current = { members, defaultTarget, scopeLabel, onFocus };
   const adapter = useMemo(() => makeAdapter(ctxRef), []);
   const runtime = useLocalRuntime(adapter);
-  const people = members.filter((m) => !m.sim).slice(0, 2);
+
+  // Max 3, driven by what's on screen. A collision outranks everything (Von Restorff).
+  const clash = clashingUsers(shown);
+  const clashArea = shown.find((m) => clash.has(m.user))?.area;
+  const rank = { active: 0, idle: 1, offline: 2 } as const;
+  const people = [...shown].sort((a, b) => rank[a.state] - rank[b.state]).slice(0, clashArea ? 1 : 2);
   const suggestions = [
-    ...people.map((m) => `What's ${m.name} doing?`),
-    defaultTarget === "dept" ? "What's engineering blocked on?" : "What's the team on?",
-  ];
+    ...(clashArea ? [{ text: `Who else is on ${areaLabel(clashArea)}?`, hot: true }] : []),
+    ...people.map((m) => ({ text: `What's ${m.name} doing?`, hot: false })),
+    { text: defaultTarget === "dept" ? "What's engineering blocked on?" : "What's the team on?", hot: false },
+  ].slice(0, 3);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <aside className="panel">
         <header className="panel-head">
-          <span className="panel-title"><span className="claude-mark">✳</span> Claude</span>
+          <span className="panel-title"><Mark className="claude-mark" /> Claude</span>
         </header>
         <ThreadPrimitive.Root className="thread">
           <ThreadPrimitive.Viewport className="viewport">
             <ThreadPrimitive.Empty>
               <div className="welcome">
-                <div className="claude-mark xl">✳</div>
                 <div className="suggestions">
                   {suggestions.map((s) => (
-                    <ThreadPrimitive.Suggestion key={s} prompt={s} send className="suggestion">{s}</ThreadPrimitive.Suggestion>
+                    <ThreadPrimitive.Suggestion key={s.text} prompt={s.text} send className={`suggestion ${s.hot ? "hot" : ""}`}>{s.text}</ThreadPrimitive.Suggestion>
                   ))}
                 </div>
               </div>

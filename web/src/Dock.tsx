@@ -10,14 +10,12 @@ export function Dock({ items, selected, onSelect }: { items: DockItem[]; selecte
             key={it.id}
             role="tab"
             aria-selected={selected === it.id}
-            className={`dock-item ${selected === it.id ? "sel" : ""}`}
+            className={`dock-item ${selected === it.id ? "sel" : ""} ${it.sim ? "sim" : ""}`}
             onClick={() => onSelect(it.id)}
-            title={it.label}
+            aria-label={it.label}
           >
-            <span className="dock-tip">{it.label}{it.sim ? " · sim" : ""}</span>
-            <span className="dock-icon" style={{ ["--hue" as string]: it.hue }}>
-              {it.glyph}
-            </span>
+            <span className="dock-tip">{it.label}</span>
+            <span className="dock-icon" style={{ ["--hue" as string]: it.hue }}>{it.glyph}</span>
             <span className="dock-dot" />
           </button>
         ))}
