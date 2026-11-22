@@ -57,13 +57,16 @@ function useChangeCount(value: string) {
 }
 
 type FocusFn = (target: AskRequest["target"], phase: "asking" | "done") => void;
-interface CardProps { m: Member; now: number; i: number; clash: boolean; focus: Focus; open: boolean; onToggle: () => void; feed: FeedItem[]; onFocus: FocusFn }
+interface CardProps { m: Member; now: number; i: number; clash: boolean; focus: Focus; selected: boolean; onToggle: () => void }
 
-function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: CardProps) {
+/** "12s ago" style last-seen label; offline people show whole minutes. */
+const seenLabel = (m: Member, seen: number) => (!Number.isFinite(seen) ? "—" : m.state === "offline" ? `${Math.floor(seen / 60)}m` : fmtAge(seen));
+
+function MemberCard({ m, now, i, clash, focus, selected, onToggle }: CardProps) {
   const areaBump = useChangeCount(m.area ?? "");
   const stateBump = useChangeCount(m.state);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (open) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [open]);
+  useEffect(() => { if (selected) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [selected]);
   const seen = ageSec(m.lastSeen, now);
   const focused = focus?.users.has(m.user);
   const { sent, received } = usePings();
@@ -75,11 +78,11 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
   const lastIncoming = received.find((r) => r.from === m.user)?.id;
   useShake(ref, out?.n);
   useShake(ref, lastIncoming);
-  const cls = ["member", m.state, clash && "clash", focused && `focus ${focus!.phase}`, open && "open", pingedMe && "pinged-me"].filter(Boolean).join(" ");
+  const cls = ["member", m.state, clash && "clash", focused && `focus ${focus!.phase}`, selected && "selected", pingedMe && "pinged-me"].filter(Boolean).join(" ");
   return (
     <li style={{ "--i": i } as CSSProperties}>
       <div className={cls} ref={ref}>
-        <button className="member-head" onClick={onToggle} aria-expanded={open} aria-label={m.name}>
+        <button className="member-head" onClick={onToggle} aria-pressed={selected} aria-current={selected || undefined} aria-label={m.name}>
           <span className="avatar" aria-hidden>
             {m.name.slice(0, 1)}
             {focused && focus!.phase === "asking" && <span className="avatar-ring" />}
@@ -95,36 +98,34 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
             </span>
             <span key={areaBump} className={`scope ${areaBump ? "flash" : ""}`} title={m.area}>{areaLabel(m.area)}</span>
           </span>
-          <span className="age big">{!Number.isFinite(seen) ? "—" : m.state === "offline" ? `${Math.floor(seen / 60)}m` : fmtAge(seen)}</span>
+          <span className="age big">{seenLabel(m, seen)}</span>
         </button>
-        {open && <MemberDetail m={m} feed={feed} onFocus={onFocus} />}
       </div>
     </li>
   );
 }
 
-interface StackProps { boards: Board[]; focus: Focus; expanded: string | null; onExpand: (user: string | null) => void; onFocus: FocusFn }
+interface StackProps { boards: Board[]; focus: Focus; selected: string | null; onSelect: (user: string | null) => void }
 
-export function MemberStack({ boards, focus, expanded, onExpand, onFocus }: StackProps) {
+export function MemberStack({ boards, focus, selected, onSelect }: StackProps) {
   const now = useNow();
   const clash = clashingUsers(boards.flatMap((b) => b.members));
-  const feed = boards.flatMap((b) => b.feed);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onExpand(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onSelect(null); };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [onExpand]);
+  }, [onSelect]);
   let i = 0;
   return (
     <div className="stacks">
       {boards.map((b) => (
         <section key={b.team} className="stack-group">
           {boards.length > 1 && <h3 className="group-title">{b.team}{b.members.some((m) => m.sim) && <span className="tag sim">sim</span>}</h3>}
-          <ul className={`stack ${b.members.some((m) => clash.has(m.user)) ? "has-clash" : ""} ${expanded ? "has-open" : ""}`}>
+          <ul className={`stack ${b.members.some((m) => clash.has(m.user)) ? "has-clash" : ""}`}>
             {b.members.map((m) => (
               <MemberCard
-                key={m.user} m={m} now={now} i={i++} clash={clash.has(m.user)} focus={focus} feed={feed} onFocus={onFocus}
-                open={expanded === m.user} onToggle={() => onExpand(expanded === m.user ? null : m.user)}
+                key={m.user} m={m} now={now} i={i++} clash={clash.has(m.user)} focus={focus}
+                selected={selected === m.user} onToggle={() => onSelect(selected === m.user ? null : m.user)}
               />
             ))}
             {b.members.length === 0 && <li className="empty">—</li>}
@@ -132,6 +133,30 @@ export function MemberStack({ boards, focus, expanded, onExpand, onFocus }: Stac
         </section>
       ))}
     </div>
+  );
+}
+
+/** Left-column panel: the selected person's head (like their card) plus their live details. */
+export function SelectedMember({ m, feed, onFocus, onClose }: { m: Member | undefined; feed: FeedItem[]; onFocus: FocusFn; onClose: () => void }) {
+  const now = useNow();
+  const projects = useProjects();
+  if (!m) return <section className="selected-panel empty-state" aria-label="Selected person">Pick someone <span className="wide-only">on the right</span><span className="narrow-only">below</span> to see what they're doing.</section>;
+  return (
+    <section className={`selected-panel ${m.state}`} aria-label={`${m.name}'s details`}>
+      <header className="selected-head">
+        <span className="avatar" aria-hidden>{m.name.slice(0, 1)}</span>
+        <span className="member-top">
+          <h2 className="name">{m.name}</h2>
+          <span className={`dot ${m.state}`} title={m.state} />
+          {projects[m.user] && <span className="project" title="Project">{projects[m.user]}</span>}
+        </span>
+        <span className="age big">{seenLabel(m, ageSec(m.lastSeen, now))}</span>
+        <button className="icon-btn" onClick={onClose} aria-label="Close details" title="Close (Esc)">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+        </button>
+      </header>
+      <MemberDetail key={m.user} m={m} feed={feed} onFocus={onFocus} />
+    </section>
   );
 }
 
