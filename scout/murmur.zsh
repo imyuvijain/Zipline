@@ -26,10 +26,12 @@ _murmur_preexec() {
   _murmur_command='' _murmur_cwd=''
   if [[ -S "$HOME/.murmur/scout.sock" ]] && _murmur_in_repo; then
     _murmur_cwd="${PWD:A}"
-    case "${1:l}" in
-      (*sk-*|*ghp_*|*akia*|*password=*) _murmur_command='[REDACTED]' ;;
-      (*) _murmur_command="$1" ;;
-    esac
+    local secret_pattern='sk-|(^|[^[:alnum:]_])sk_[[:alnum:]]{16,}|ghp_|akia|password='
+    if [[ "${1:l}" =~ $secret_pattern ]]; then
+      _murmur_command='[REDACTED]'
+    else
+      _murmur_command="$1"
+    fi
   fi
   return 0
 }

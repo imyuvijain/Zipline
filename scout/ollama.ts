@@ -1,6 +1,6 @@
 const model = 'qwen2.5:3b'
 
-export const secret = /sk-|ghp_|AKIA|password=/i
+export const secret = /sk-|\bsk_[a-z0-9]{16,}|ghp_|AKIA|password=/i
 export const redact = (value: string) => secret.test(value) ? '[REDACTED]' : value
 
 export function localOllama(value = 'http://127.0.0.1:11434') {
