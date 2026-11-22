@@ -3,6 +3,18 @@ import type { Board, FeedItem } from "../../shared/types.ts";
 import { ageSec, clock, fmtAge, useNow } from "./time.ts";
 import { MemberDetail } from "./MemberDetail.tsx";
 import { usePings } from "./pings.ts";
+
+const SHAKE: Keyframe[] = [0, -4, 4, -3, 3, -1, 0].map((x) => ({ transform: `translateX(${x}px)` }));
+
+/** Small one-shot shake whenever `trigger` changes (skips the first render and reduced-motion users). */
+function useShake(el: React.RefObject<HTMLElement | null>, trigger: string | number | undefined) {
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    if (trigger === undefined || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.current?.animate(SHAKE, { duration: 420, easing: "ease-out" });
+  }, [trigger, el]);
+}
 import type { AskRequest } from "../../shared/types.ts";
 
 type Member = Board["members"][number];
@@ -46,6 +58,9 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
   const outAge = out ? (now - out.at) / 1000 : Infinity;
   const pingedOut = out && outAge < 120;
   const pingedMe = received.some((r) => r.from === m.user);
+  const lastIncoming = received.find((r) => r.from === m.user)?.id;
+  useShake(ref, out?.n);
+  useShake(ref, lastIncoming);
   const cls = ["member", m.state, clash && "clash", focused && `focus ${focus!.phase}`, open && "open", pingedMe && "pinged-me"].filter(Boolean).join(" ");
   return (
     <li style={{ "--i": i } as CSSProperties}>
