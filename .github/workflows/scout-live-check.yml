@@ -1,0 +1,53 @@
+name: Verify Maxim's live scout
+on:
+  push:
+    branches: [p1/scout-live-check]
+permissions:
+  contents: read
+jobs:
+  live-scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SERVER_URL: https://3ff1b48a-5050-45ea-bb1c-0147135145cc.mtm.sh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Type-check the merged scout
+        working-directory: scout
+        run: npm ci && npm run check
+      - name: Ask Maxim's Mac twice through Maritime
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { setTimeout as sleep } from 'node:timers/promises';
+          const base = process.env.SERVER_URL;
+          async function get(path, init) {
+            const res = await fetch(new URL(path, base), { ...init, signal: AbortSignal.timeout(30000) });
+            assert.ok(res.ok, path + ' returned ' + res.status);
+            return res.json();
+          }
+          const health = await get('/health');
+          assert.ok(health.online.includes('maxim'), 'Maxim is disconnected');
+          const board = await get('/board');
+          const maxim = board.members.find(m => m.user === 'maxim');
+          assert.equal(maxim.state, 'active');
+          assert.ok(maxim.area?.startsWith('repo:team23-hack'), 'Missing project claim');
+          for (let i = 0; i < 2; i++) {
+            const start = performance.now();
+            const answer = await get('/ask', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ asker: 'scout-check', target: 'maxim', question: 'What is the exact filename of the most recent saved project file?' })
+            });
+            assert.equal(answer.cached, false);
+            assert.ok(answer.answer.length > 0 && answer.answer.length <= 300);
+            assert.ok(answer.sources.some(s => /maxim.*laptop/i.test(s.label) && !/last update/i.test(s.label)), 'No fresh laptop source');
+            assert.doesNotMatch(answer.answer, /unavailable|offline|didn.t answer|no recent local activity/i);
+            console.log('Live ask %d succeeded in %d ms (%d characters).', i+1, Math.round(performance.now()-start), answer.answer.length);
+            if (i === 0) await sleep(20000);
+          }
+          JS
