@@ -5,6 +5,23 @@ Challenge: **"an AI coworker they'd actually use."**
 
 > **Read this whole file (5 min), find your role in §5, and start.** Questions go in Slack.
 
+## 👋 START HERE: who does what
+
+| Who | Owns | First checkpoint (12:55) |
+|---|---|---|
+| **Maxim** | `/scout`: the laptop agent. Collectors, SQLite buffer, `/claim` + heartbeat, WebSocket, Ollama summaries, notifications, plus the user-facing sharing page on `localhost:4545` | Real claims from your laptop reaching the server |
+| **Anshi** | `/server`: Fastify + SQLite + WebSocket hub, `/claim` `/heartbeat` `/board` `/ask`, overlap check. **Deploy to Maritime early and post the URL in Slack.** | Live URL serving `/board` |
+| **Richard** | `/web`: Vite + React + assistant-ui. Team board with live ages, chat → `/ask`, activity feed, dept tab | Board rendering `shared/fixtures.json` |
+| **Yuvi** | Lead. Pairs with Maxim + Richard, seed data for the fake teams, demo script, video, **submits the form at 14:50** | Everyone unblocked |
+
+**Contracts:** `shared/types.ts`. **Don't change them without posting in Slack.** Build against `shared/fixtures.json` until the server is live.
+
+**Setup now:** `cp .env.example .env` · `ollama pull qwen2.5:3b` · macOS Privacy & Security → Accessibility + Automation → allow Terminal.
+
+**Timeline:** 12:55 claim shows on the board · 13:30 typed question returns a laptop summary · 14:00 all 4 laptops live + collision notification · **14:20 feature freeze** · 14:35 video · **14:50 submit**.
+
+**Rules:** one branch per person, merge to `main` every 30 min, no secrets in git. Partner tool not working within 15 min? Fake it and move on. Blocked for 10 min? Say so in Slack.
+
 ---
 
 ## 1. What we're building, in one paragraph
