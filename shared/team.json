@@ -2,6 +2,7 @@
   "company": "acme",
   "dept": "engineering",
   "team": "team-murmur",
+  "manager": "yuvi",
   "members": [
     {
       "user": "maxim",
@@ -21,7 +22,7 @@
     {
       "user": "yuvi",
       "name": "Yuvi",
-      "role": "P4 lead, pairs with Maxim + Richard"
+      "role": "P4 lead + manager, voice catch-up calls"
     }
   ]
 }
