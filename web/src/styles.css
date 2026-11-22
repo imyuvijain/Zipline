@@ -87,21 +87,26 @@ h1, h3 { margin: 0; letter-spacing: -0.015em; }
 .pinger { display: flex; gap: 8px; }
 .pinger input { flex: 1; min-width: 0; font: inherit; font-size: 15px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px; outline: 0; transition: border-color .15s; }
 .pinger input:focus { border-color: var(--accent); }
-.pinger .btn.primary { background: var(--accent); border-color: var(--accent); color: #06201b; min-width: 84px; }
+/* Ping button: a slow, visible press; a fill sweep while sending; one settle into the result. */
+@keyframes sweep { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.pinger .btn.primary { position: relative; overflow: hidden; min-width: 104px; background: var(--accent); border-color: var(--accent); color: #06201b; font-variant-numeric: tabular-nums;
+  transition: transform .22s var(--ease-out), background .3s ease, color .3s ease, border-color .3s ease, filter .2s; }
+.pinger .btn.primary > span { position: relative; }
+.pinger .btn.primary:active:not(:disabled) { transform: scale(.95); filter: brightness(.9); transition-duration: .16s; }
+.pinger .btn.primary:disabled { opacity: 1; cursor: default; }
+.pinger.sending .btn.primary { background: var(--accent-soft); color: var(--accent); }
+.pinger.sending .btn.primary::before { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--accent) 35%, transparent); transform-origin: left; animation: sweep .6s var(--ease-in-expo) forwards; }
+.pinger.sent .btn.primary { background: transparent; color: var(--accent); }
 .pinger.failed .btn.primary { background: transparent; border-color: var(--bad); color: var(--bad); }
 
 /* Pings */
 @keyframes burst { from { transform: scale(1); opacity: .9; } to { transform: scale(2.1); opacity: 0; } }
-@keyframes pop { 0% { transform: scale(1); } 35% { transform: scale(.92); } 70% { transform: scale(1.06); } 100% { transform: scale(1); } }
 .ping-burst { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent); pointer-events: none; animation: burst .9s var(--ease-out) 2 both; }
-.ping-burst.failed { border-color: var(--bad); animation-iteration-count: 1; }
 .ping-burst.incoming { border-color: var(--ping); animation: burst 1.4s var(--ease-out) infinite; }
 .ping-dot { position: absolute; right: -2px; bottom: -2px; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); transition: background .2s; }
-.ping-dot.sent { animation: pulse 1s ease-in-out infinite; }
+.ping-dot.sending { animation: pulse 1s ease-in-out infinite; }
 .ping-dot.failed { background: var(--bad); }
 .member.pinged-me { border-color: var(--ping); }
-.btn.pop { animation: pop .35s var(--ease-spring); }
-.pinger.sent .btn.primary { background: transparent; color: var(--accent); font-variant-numeric: tabular-nums; }
 
 .incoming-list { display: grid; gap: 8px; }
 .incoming { position: relative; display: flex; align-items: center; border-radius: 14px; border: 1px solid var(--ping); background: color-mix(in srgb, var(--ping) 12%, var(--surface)); animation: rise .3s var(--ease-out); }
