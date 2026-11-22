@@ -39,4 +39,12 @@ If `server/src/brief.ts` exists, it's registered automatically: `export default 
 ## Rules
 - If `web/dist` exists, it's served at `/`.
 
-Env: `PORT` (8787), `DB_PATH` (murmur.db), `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (claude-haiku-5-5), `SEED_SIM=0` to skip the sample sim teams.
+Env: `PORT` (8787), `DB_PATH` (murmur.db), `SEED_SIM=0` to skip the sample sim teams.
+
+## Server AI (team/dept answers + overlap verdicts)
+Picked at startup; `GET /health` shows which one (`ai`).
+1. **Hosted local model** when `LLM_URL` is set: `LLM_API=ollama` (default, calls `/api/chat`) or `openai` (calls `/chat/completions`, so include `/v1` in the URL). Also `LLM_MODEL` (qwen2.5:3b), `LLM_API_KEY` (optional bearer token), `LLM_TIMEOUT_MS` (6000).
+2. **Claude Haiku** when `ANTHROPIC_API_KEY` is set (`CLAUDE_MODEL`, default claude-haiku-5-5).
+3. **None**: team answers are a plain digest and every overlap becomes a "same task?" ping.
+
+The URL must be reachable from wherever the server runs (a public URL when it's on Maritime).

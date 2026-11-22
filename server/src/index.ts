@@ -9,6 +9,7 @@ import type { AskRequest, Board, Claim, FailEntry, OverlapAnswer, ServerToScout 
 import * as db from "./db.ts";
 import * as hub from "./hub.ts";
 import { handleAsk } from "./ask.ts";
+import { aiBackend } from "./claude.ts";
 import { checkOverlaps, answerOverlap } from "./overlap.ts";
 import { displayArea, overlaps, ago } from "./areas.ts";
 import { applySeed, seedSampleIfEmpty, type SeedBody } from "./sim-seed.ts";
@@ -25,7 +26,7 @@ await app.register(websocket);
 const bad = (msg: string) => ({ ok: false, error: msg });
 
 // ---------- health ----------
-app.get("/health", async () => ({ ok: true, online: hub.onlineUsers(), teams: db.allTeams() }));
+app.get("/health", async () => ({ ok: true, ai: aiBackend, online: hub.onlineUsers(), teams: db.allTeams() }));
 
 // ---------- claims + collision check ----------
 app.post<{ Body: Claim }>("/claim", async (req, reply) => {
