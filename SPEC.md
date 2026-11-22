@@ -63,7 +63,7 @@ See `shared/types.ts`. Summary:
 | POST | `/fail` | `FailEntry` | `{ok}` (stretch) |
 | WS | `/ws?user=priya` | scout connects | server→scout: `ask`, `alert`, `asked_about_you` · scout→server: `summary` |
 
-**Users are hardcoded** for the demo: `priya`, `sam`, `jordan`, `alex` → replace these with our real first names in `shared/team.json`. Team `team-murmur`, dept `engineering`.
+**Users are hardcoded** for the demo: `maxim`, `anshi`, `richard`, `yuvi` (in `shared/team.json`). Team `team-murmur`, dept `engineering`.
 
 Server URL: `SERVER_URL` in `.env` (`http://localhost:8787` locally, the Maritime URL once deployed).
 
@@ -93,7 +93,7 @@ Server URL: `SERVER_URL` in `.env` (`http://localhost:8787` locally, the Maritim
 
 ## 5. Roles: who does what
 
-### P1: Scout / laptop agent (`/scout`)
+### P1 · MAXIM: Scout / laptop agent, context + user integration (`/scout`)
 | By | Do |
 |---|---|
 | 12:55 | Collectors → SQLite buffer, pruned to 30 min. Secret regex (`sk-`, `ghp_`, `AKIA`, `password=`). |
@@ -101,7 +101,7 @@ Server URL: `SERVER_URL` in `.env` (`http://localhost:8787` locally, the Maritim
 | 13:50 | On `ask`, build a prompt from the buffer (recent diff hunks, commands + exit codes, window titles, commits) → Ollama → `Summary` (≤300 chars, `refs`). Notifications for `alert` and `asked_about_you`. |
 | 14:20 | Running on all 4 laptops. Tune the prompt until summaries name real files and tasks. |
 
-### P2: Server + DB (`/server`)
+### P2 · ANSHI: Server + DB (`/server`)
 | By | Do |
 |---|---|
 | 12:55 | Fastify + SQLite tables (`claims`, `sessions`, `summaries`, `asks_log`, `fails`). `/claim`, `/heartbeat`, `/board` with seed data. **Deploy to Maritime now** and post the URL in Slack. |
@@ -109,7 +109,7 @@ Server URL: `SERVER_URL` in `.env` (`http://localhost:8787` locally, the Maritim
 | 13:50 | Answer logic: one person = forward; team = Claude Haiku. 3-min cache. Write to `asks_log` and send `asked_about_you`. |
 | 14:20 | Overlap check on `/claim` → `alert` to the new claimer, 1h mute per person pair. `/fail` if time. |
 
-### P3: Web app (`/web`)
+### P3 · RICHARD: Web app UI (`/web`)
 | By | Do |
 |---|---|
 | 12:55 | Vite app, team board from `GET /board` (use `shared/fixtures.json` until P2 is live): avatar, name, state dot, location chip, ages that tick every second. |
@@ -117,7 +117,7 @@ Server URL: `SERVER_URL` in `.env` (`http://localhost:8787` locally, the Maritim
 | 14:00 | Activity feed (claims, alerts, asks) polling `/board` every 3s. Dept tab with sim teams labeled `sim`. |
 | 14:20 | Demo polish: big font, dark mode, one-screen layout for the demo table. |
 
-### P4: Lead · local sharing page · demo (`/demo`)
+### P4 · YUVI: Lead · pairs with Maxim + Richard · local sharing page · demo (`/demo`)
 | By | Do |
 |---|---|
 | 12:55 | Own this spec and Slack. Create `shared/team.json` with real names. Help P1 with the `localhost:4545` page: "you're in X", the "who asked about you" log, the Pause button (it stops claims and answers). |
