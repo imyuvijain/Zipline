@@ -1,6 +1,8 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "web", "run", "dev"], "port": 5173 }
+    { "name": "server", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "server", "start"], "port": 8787 },
+    { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "web", "run", "dev"], "port": 5173 },
+    { "name": "web-manager", "runtimeExecutable": "sh", "runtimeArgs": ["-c", "VITE_MURMUR_USER=yuvi npm --prefix web run dev -- --port 5174 --strictPort"], "port": 5174 }
   ]
 }
