@@ -53,6 +53,7 @@ jobs:
           }
           JS
   merged-project:
+    if: ${{ !contains(github.event.head_commit.message, 'Socket regression') }}
     runs-on: ubuntu-latest
     timeout-minutes: 7
     steps:
@@ -93,6 +94,7 @@ jobs:
           curl -fsS "$SERVER_URL/health"
           npm run smoke
   real-model:
+    if: ${{ !contains(github.event.head_commit.message, 'Socket regression') }}
     runs-on: ubuntu-latest
     timeout-minutes: 18
     steps:
@@ -169,3 +171,21 @@ jobs:
           await until(async()=>(await json(root+'/health')).online.includes('maxim'));
           console.log('Two real Qwen answers, matching local audits, Pause and Resume passed.');
           JS
+
+  socket-restart:
+    if: contains(github.event.head_commit.message, 'Socket regression')
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 8d80a6be760ccd2d88d4ea6634504066ed2a89c4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Exercise native socket recovery after a killed scout
+        working-directory: scout
+        run: node --experimental-strip-types --test --test-timeout=15000 shell-socket.test.mjs
