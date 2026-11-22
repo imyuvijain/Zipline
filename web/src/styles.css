@@ -272,3 +272,5 @@ h1, h3 { margin: 0; letter-spacing: -0.015em; }
   .page-nav { margin-left: 4px; }
   .topbar, .main-scroll { padding-left: 16px; padding-right: 16px; }
 }
+.project { font-size: 12px; color: var(--muted); border: 1px solid var(--chip); padding: 1px 7px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+.project-editor { margin-top: 8px; }

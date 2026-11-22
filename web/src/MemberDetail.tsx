@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AskRequest, AskResponse, Board, FeedItem } from "../../shared/types.ts";
-import { ask, ME } from "./api.ts";
+import { IS_MANAGER, ask, ME } from "./api.ts";
+import { projectNames, setProject, useProjects } from "./projects.ts";
 import { sendPing, usePings } from "./pings.ts";
 import { clock, fmtAge, ageSec, useNow } from "./time.ts";
 
@@ -50,6 +51,25 @@ function Pinger({ m }: { m: Member }) {
     >
       <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Note" maxLength={140} aria-label={`Note to ${m.name}`} />
       <button className="btn primary" disabled={status === "sending"} aria-live="polite"><span>{label}</span></button>
+    </form>
+  );
+}
+
+/** Manager only: move someone to another project. */
+function ProjectEditor({ m }: { m: Member }) {
+  const projects = useProjects();
+  const saved = projects[m.user] ?? "";
+  const [value, setValue] = useState(saved);
+  useEffect(() => setValue(saved), [saved]);
+  const listId = `projects-${m.user}`;
+  return (
+    <form
+      className="pinger project-editor"
+      onSubmit={(e) => { e.preventDefault(); setProject(m.user, value); }}
+    >
+      <input value={value} onChange={(e) => setValue(e.target.value)} list={listId} placeholder="Project" maxLength={60} aria-label={`${m.name}'s project`} />
+      <datalist id={listId}>{projectNames(projects).map((p) => <option key={p} value={p} />)}</datalist>
+      <button className="btn" disabled={value.trim() === saved}><span>{value.trim() === saved ? "Assigned" : "Assign"}</span></button>
     </form>
   );
 }
@@ -106,6 +126,8 @@ export function MemberDetail({ m, feed, onFocus }: { m: Member; feed: FeedItem[]
           ))}
         </ul>
       )}
+
+      {IS_MANAGER && !m.sim && <ProjectEditor m={m} />}
 
       {m.user !== ME && <Pinger m={m} />}
     </div>

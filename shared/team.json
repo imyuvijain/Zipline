@@ -7,22 +7,20 @@
     {
       "user": "maxim",
       "name": "Maxim",
-      "role": "P1 scout / context + user integration"
-    },
-    {
-      "user": "anshi",
-      "name": "Anshi",
-      "role": "P2 backend"
+      "role": "P1 scout / context + user integration",
+      "project": "Scout (laptop agent)"
     },
     {
       "user": "richard",
       "name": "Richard",
-      "role": "P3 web UI"
+      "role": "P3 web UI",
+      "project": "Web app"
     },
     {
       "user": "yuvi",
       "name": "Yuvi",
-      "role": "P4 lead + manager, voice catch-up calls"
+      "role": "P4 lead + manager, voice catch-up calls",
+      "project": "Voice calls + demo"
     }
   ]
 }

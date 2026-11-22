@@ -7,7 +7,10 @@ const BASE = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? "";
 
 const USER_KEY = "zipline_user";
 function readStoredUser(): string | null {
-  try { return localStorage.getItem(USER_KEY); } catch { return null; }
+  try {
+    const u = localStorage.getItem(USER_KEY);
+    return u && team.members.some((m) => m.user === u) ? u : null; // ignore removed members
+  } catch { return null; }
 }
 /** Current user: localStorage (demo switcher) → VITE_MURMUR_USER → "richard". Switching reloads, so this is read once. */
 export const ME: UserId = readStoredUser() || (import.meta.env.VITE_MURMUR_USER as string | undefined) || "richard";
@@ -90,7 +93,10 @@ function buildFixtureBoards(): Record<string, Board> {
 
 export async function getBoard(team: string): Promise<{ board: Board; source: Source }> {
   try {
-    return { board: await fetchJson<Board>(`/board?team=${encodeURIComponent(team)}`), source: "live" };
+    const board = await fetchJson<Board>(`/board?team=${encodeURIComponent(team)}`);
+    // Our team shows only the people in shared/team.json (the server may still list removed members).
+    if (team === TEAM) board.members = board.members.filter((m) => TEAM_MEMBERS.some((t) => t.user === m.user));
+    return { board, source: "live" };
   } catch {
     return { board: fixtureBoards()[team] ?? { team, members: [], feed: [] }, source: "fixtures" };
   }

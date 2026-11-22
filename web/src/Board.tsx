@@ -3,6 +3,7 @@ import type { Board, FeedItem } from "../../shared/types.ts";
 import { ageSec, clock, fmtAge, useNow } from "./time.ts";
 import { MemberDetail } from "./MemberDetail.tsx";
 import { MIN_SENDING_MS, usePings } from "./pings.ts";
+import { useProjects } from "./projects.ts";
 
 // One continuous pendulum swing (0.6s per back-and-forth) lasting the whole ping (MIN_SENDING_MS):
 // starts and ends at rest, only slows at the extremes, so it never reads as separate shakes.
@@ -66,6 +67,7 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
   const seen = ageSec(m.lastSeen, now);
   const focused = focus?.users.has(m.user);
   const { sent, received } = usePings();
+  const projects = useProjects();
   const out = sent[m.user];
   const outAge = out ? (now - out.at) / 1000 : Infinity;
   const pingedOut = out && outAge < 120;
@@ -89,6 +91,7 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
             <span className="member-top">
               <span className="name">{m.name}</span>
               <span key={stateBump} className={`dot ${m.state} ${stateBump ? "ring" : ""}`} title={m.state} />
+              {projects[m.user] && <span className="project" title="Project">{projects[m.user]}</span>}
             </span>
             <span key={areaBump} className={`scope ${areaBump ? "flash" : ""}`} title={m.area}>{areaLabel(m.area)}</span>
           </span>
