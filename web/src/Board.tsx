@@ -2,7 +2,31 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Board, FeedItem } from "../../shared/types.ts";
 import { ageSec, clock, fmtAge, useNow } from "./time.ts";
 import { MemberDetail } from "./MemberDetail.tsx";
-import { usePings } from "./pings.ts";
+import { MIN_SENDING_MS, usePings } from "./pings.ts";
+
+// One continuous pendulum swing (0.6s per back-and-forth) lasting the whole ping (MIN_SENDING_MS):
+// starts and ends at rest, only slows at the extremes, so it never reads as separate shakes.
+const SINE_OUT = "cubic-bezier(.61, 1, .88, 1)";
+const SINE_IN_OUT = "cubic-bezier(.37, 0, .63, 1)";
+const SINE_IN = "cubic-bezier(.12, 0, .39, 0)";
+const SHAKE: Keyframe[] = [
+  { transform: "translateX(0)", offset: 0, easing: SINE_OUT },
+  { transform: "translateX(-4px)", offset: 1 / 8, easing: SINE_IN_OUT },
+  { transform: "translateX(4px)", offset: 3 / 8, easing: SINE_IN_OUT },
+  { transform: "translateX(-4px)", offset: 5 / 8, easing: SINE_IN_OUT },
+  { transform: "translateX(4px)", offset: 7 / 8, easing: SINE_IN },
+  { transform: "translateX(0)", offset: 1 },
+];
+
+/** Small one-shot shake whenever `trigger` changes (skips the first render and reduced-motion users). */
+function useShake(el: React.RefObject<HTMLElement | null>, trigger: string | number | undefined) {
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    if (trigger === undefined || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.current?.animate(SHAKE, { duration: MIN_SENDING_MS, easing: "linear" });
+  }, [trigger, el]);
+}
 import type { AskRequest } from "../../shared/types.ts";
 
 type Member = Board["members"][number];
@@ -46,6 +70,9 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
   const outAge = out ? (now - out.at) / 1000 : Infinity;
   const pingedOut = out && outAge < 120;
   const pingedMe = received.some((r) => r.from === m.user);
+  const lastIncoming = received.find((r) => r.from === m.user)?.id;
+  useShake(ref, out?.n);
+  useShake(ref, lastIncoming);
   const cls = ["member", m.state, clash && "clash", focused && `focus ${focus!.phase}`, open && "open", pingedMe && "pinged-me"].filter(Boolean).join(" ");
   return (
     <li style={{ "--i": i } as CSSProperties}>
@@ -65,7 +92,7 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
             </span>
             <span key={areaBump} className={`scope ${areaBump ? "flash" : ""}`} title={m.area}>{areaLabel(m.area)}</span>
           </span>
-          <span className="age big">{m.state === "offline" ? `${Math.floor(seen / 60)}m` : fmtAge(seen)}</span>
+          <span className="age big">{!Number.isFinite(seen) ? "—" : m.state === "offline" ? `${Math.floor(seen / 60)}m` : fmtAge(seen)}</span>
         </button>
         {open && <MemberDetail m={m} feed={feed} onFocus={onFocus} />}
       </div>

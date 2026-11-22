@@ -12,6 +12,8 @@ export default defineConfig(({ mode }) => {
   proxy["/ws"] = { target, changeOrigin: true, ws: true } as (typeof proxy)[string] & { ws: boolean };
   return {
     plugins: [react()],
+    // One .env at the repo root for scout, server and web. Only VITE_* keys reach the browser.
+    envDir: "..",
     server: { port: 5173, proxy, fs: { allow: [".."] } },
   };
 });
