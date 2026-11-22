@@ -52,3 +52,24 @@ Each claim sends up to five distinct repo-relative file paths from saves in
 the claimed folder during the last 30 minutes. Paths rank by save frequency,
 with the most recent save breaking ties. Paths containing secret markers are
 omitted from `Claim.files`.
+
+## One-person asks
+
+Install Ollama on the scout laptop, run `ollama serve` if it is not already
+running, and download the model once with `ollama pull qwen2.5:3b`. For the
+demo, warm the model with `ollama run qwen2.5:3b "Reply with OK"` before the
+first ask. The scout calls the local Ollama API and keeps the model loaded for
+five minutes. `OLLAMA_URL` defaults to `http://127.0.0.1:11434` and accepts
+only loopback HTTP(S) URLs. The API request rejects redirects.
+
+Start the scout as above, save a file, then ask about Maxim from the board’s
+one-person ask flow. The scout connects to the server's `/ws?user=maxim`,
+reconnects after a drop, and refreshes saves, Git and the active window before
+each ask. Only the summary and its grounded references are sent to the server.
+The scout displays macOS notifications for server messages about asks, alerts,
+overlap checks and incoming calls. Intent asks return a one-line task and
+leave ask notifications to the server.
+
+If Ollama fails or misses the local deadline, a typed ask returns an
+unavailable summary without references. A failed intent is left unanswered
+so the server can handle it as unavailable.

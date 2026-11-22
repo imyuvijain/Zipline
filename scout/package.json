@@ -12,7 +12,8 @@
   "dependencies": {
     "chokidar": "^4.0.3",
     "dotenv": "^17.4.2",
-    "tsx": "^4.20.0"
+    "tsx": "^4.20.0",
+    "ws": "^8.23.0"
   },
   "optionalDependencies": {
     "better-sqlite3": "^11.10.0"
@@ -20,6 +21,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.19.0",
+    "@types/ws": "^8.18.2",
     "typescript": "^5.8.3"
   }
 }

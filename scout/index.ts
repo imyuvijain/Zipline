@@ -2,6 +2,7 @@ import './env.mjs'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, realpathSync } from 'node:fs'
+import type { Stats } from 'node:fs'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
@@ -9,14 +10,17 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, sep } from 'n
 import { promisify } from 'node:util'
 import type Database from 'better-sqlite3'
 import { watch } from 'chokidar'
+import { secret, redact, localOllama } from './ollama.js'
+import { collectFreshSaves } from './fresh-saves.js'
+import type { Activity } from './evidence.js'
+import { connectScout } from './ws.js'
 
 const exec = promisify(execFile)
-const secret = /sk-|ghp_|AKIA|password=/i
-const redact = (value: string) => secret.test(value) ? '[REDACTED]' : value
 const user = process.env.MURMUR_USER ?? 'maxim'
 const fastClaim = process.env.DEMO_FAST_CLAIM === '1'
 const claimDelay = fastClaim ? 0 : 15_000
 const endpoint = new URL(process.env.SERVER_URL ?? 'http://localhost:8787')
+const ollama = localOllama(process.env.OLLAMA_URL)
 const roots = (process.env.WATCH_REPOS ?? '').split(delimiter).filter(Boolean)
 if (!roots.length) throw new Error('Set WATCH_REPOS to the Git checkout path(s).')
 if (!/^[\w.-]+$/.test(user) || secret.test(user)) throw new Error('Invalid MURMUR_USER.')
@@ -96,6 +100,7 @@ const areaSaves = db.prepare(`
   WHERE kind = 'save' AND repo = ? AND folder = ? AND at >= ?
   ORDER BY id DESC
 `)
+const answerRows = db.prepare('SELECT kind, at, detail FROM activity WHERE at > ? ORDER BY id DESC LIMIT 48')
 const retention = 30 * 60_000
 function record(kind: string, detail: Record<string, string | number>, repo?: string, folder?: string) {
   const sanitized = Object.fromEntries(Object.entries(detail).map(([key, value]) =>
@@ -113,7 +118,7 @@ function expire() {
 const branches = new Map<string, string>()
 const gitState = new Map<string, { head: string; fingerprint: string }>()
 
-async function collectGit(repo: string) {
+async function collectGit(repo: string, fresh = false, signal?: AbortSignal) {
   try {
     const [headText, branchText] = await Promise.all([
       git(repo, 'rev-parse', '--verify', 'HEAD').catch(() => ''),
@@ -130,13 +135,15 @@ async function collectGit(repo: string) {
     ])
     const fingerprint = createHash('sha256').update(status).update('\0').update(diff).digest('hex')
     const previous = gitState.get(repo)
-    if (previous?.fingerprint !== fingerprint && (previous || status || diff)) {
+    signal?.throwIfAborted()
+    if (fresh || (previous?.fingerprint !== fingerprint && (previous || status || diff))) {
       record('git-change', { branch, status, diff }, repo)
     }
     if (head && previous && head !== previous.head) {
       const commits = await git(repo, 'log', '-20', '--format=%H %s',
         previous.head ? `${previous.head}..${head}` : head)
-      record('git-commit', { branch, head, commits }, repo)
+      signal?.throwIfAborted()
+      if (commits) record('git-commit', { branch, head, commits }, repo)
     }
     gitState.set(repo, { head, fingerprint })
   } catch {
@@ -145,7 +152,7 @@ async function collectGit(repo: string) {
 }
 
 let lastWindow: string | undefined
-async function collectWindow() {
+async function collectWindow(fresh = false, signal?: AbortSignal) {
   if (process.platform !== 'darwin') return
   try {
     const { stdout } = await exec('/usr/bin/osascript', ['-e', `
@@ -161,7 +168,8 @@ async function collectWindow() {
     const [app, ...titleLines] = stdout.trimEnd().split('\n')
     const title = titleLines.join('\n')
     const sample = JSON.stringify([redact(app), redact(title)])
-    if (sample !== lastWindow) record('window', { app, title })
+    signal?.throwIfAborted()
+    if (fresh || sample !== lastWindow) record('window', { app, title })
     lastWindow = sample
   } catch {
     if (lastWindow !== '') console.error('Active app sample unavailable. Check macOS permissions.')
@@ -262,53 +270,84 @@ await new Promise<void>((resolve, reject) => {
   throw new Error('Cannot open scout socket. Check for a running scout or a stale ~/.murmur/scout.sock.')
 })
 
-expire()
-void post('/heartbeat', { user })
-setInterval(() => void post('/heartbeat', { user }), 15_000)
-await Promise.all(repos.map(collectGit))
-
-const watcher = watch(repos, {
-  ignoreInitial: true,
-  followSymlinks: false,
-  atomic: true,
-  awaitWriteFinish: { stabilityThreshold: 75, pollInterval: 15 },
-  ignored: path => path === home || path.startsWith(home + sep) ||
+const startedWatching = Date.now()
+const seenSaves = new Map<string, { stamp: string; at: number }>()
+function ignored(path: string) {
+  return path === home || path.startsWith(home + sep) ||
     relative(repoFor(path) ?? path, path).split(sep).some(part => part === '.git' || part === 'node_modules')
-})
-watcher.on('all', (event, path) => {
-  if (event !== 'add' && event !== 'change') return
+}
+function captureSave(path: string, stats?: Stats) {
   const repo = repoFor(path)
   if (!repo) return
+  if (stats) {
+    const key = createHash('sha256').update(path).digest('hex')
+    const stamp = `${stats.mtimeMs}:${stats.ctimeMs}:${stats.size}`
+    if (seenSaves.get(key)?.stamp === stamp) return
+    seenSaves.set(key, { stamp, at: Date.now() })
+  }
   const file = relative(repo, path)
   const folder = dirname(file)
   const at = record('save', { file }, repo, folder === '.' ? '' : folder)
   if (fastClaim) firstDemoSaveAt ??= at
   void evaluateClaim()
+}
+
+expire()
+void post('/heartbeat', { user })
+setInterval(() => void post('/heartbeat', { user }), 15_000)
+await Promise.all(repos.map(repo => collectGit(repo)))
+
+const watcher = watch(repos, {
+  ignoreInitial: true,
+  followSymlinks: false,
+  atomic: true,
+  alwaysStat: true,
+  awaitWriteFinish: { stabilityThreshold: 75, pollInterval: 15 },
+  ignored
+})
+watcher.on('all', (event, path, stats) => {
+  if (event === 'add' || event === 'change') captureSave(path, stats)
 })
 watcher.on('error', () => console.error('File activity watcher reported an error.'))
 watcher.on('ready', () => console.log('Zipline scout is watching for saves.'))
 
-let sampling = false
-async function sample() {
-  if (sampling) return
-  sampling = true
-  try {
-    await Promise.all([...repos.map(collectGit), collectWindow()])
-    await evaluateClaim()
-  } finally {
-    sampling = false
-  }
+let currentSample: Promise<unknown> | undefined
+function sample(fresh = false, signal?: AbortSignal) {
+  currentSample = Promise.all([
+    ...repos.map(repo => collectGit(repo, fresh, signal)),
+    collectWindow(fresh, signal)
+  ]).finally(() => { currentSample = undefined })
+  return currentSample
 }
 
-void collectWindow()
-setInterval(() => void sample(), 10_000)
+async function refreshForAsk(signal: AbortSignal) {
+  const freshSaves = collectFreshSaves(repos, ignored, Math.max(startedWatching, Date.now() - retention), captureSave, signal)
+  await Promise.all([freshSaves, (async () => {
+    while (currentSample) await currentSample
+    signal.throwIfAborted()
+    await sample(true, signal)
+  })()])
+  signal.throwIfAborted()
+  return answerRows.all(Date.now() - retention) as Activity[]
+}
+
+const disconnect = connectScout(endpoint, user, ollama, refreshForAsk)
+void sample()
+setInterval(() => {
+  const cutoff = Date.now() - retention
+  for (const [key, save] of seenSaves) {
+    if (save.at < cutoff) seenSaves.delete(key)
+  }
+  if (!currentSample) void sample().then(evaluateClaim)
+}, 10_000)
 setInterval(() => {
   expire()
   void evaluateClaim()
 }, 1_000)
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.once(signal, () => commands.close(() => {
-    db.close()
-    process.exit(0)
-  }))
+  process.once(signal, () => {
+    disconnect()
+    void watcher.close()
+    commands.close(() => process.exit(0))
+  })
 }
