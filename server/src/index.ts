@@ -152,5 +152,6 @@ if (existsSync(fileURLToPath(briefFile))) await app.register((await import(brief
 // ---------- built web app (Maritime serves server + web together) ----------
 const webDist = fileURLToPath(new URL("../../web/dist", import.meta.url));
 if (existsSync(webDist)) await app.register(fastifyStatic, { root: webDist });
+else app.get("/", async () => ({ ok: true, service: "zipline-server", endpoints: ["/board", "/ask", "/claim", "/health", "/ws"] }));
 
 await app.listen({ port: PORT, host: "0.0.0.0" });
