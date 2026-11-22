@@ -1,249 +1,382 @@
 // Voice catch-up calls (SPEC §2b). Registered by index.ts when this file exists.
 //   POST /assign            manager assigns work -> assignment brief -> incoming_call to `to`
-//   POST /brief             BriefRequest -> BriefResponse (script + sources)
+//   POST /brief             BriefRequest -> BriefResponse (script + spoken + sources)
 //   GET  /brief/:id         the stored BriefResponse (the web needs the script after an incoming_call)
-//   GET  /brief/:id/audio   ElevenLabs TTS (eleven_flash_v2_5, mp3), generated once then replayed from the DB
-// Script: deterministic template over the DB (summaries, claims, assignments, overlaps, fails), <=150 words.
+//   GET  /brief/:id/audio   ElevenLabs TTS of the spoken text (eleven_flash_v2_5, mp3), generated once then replayed
+//   GET  /tasks?user=X      assignments to X, newest first ("Today's tasks")
+//   POST /tasks             same as /assign;  POST /tasks/:id/done  marks one done
+// Script: deterministic template over the DB, only what is relevant to the listener, <=120 words.
+// `script` keeps exact paths for display; `spoken` (toSpoken) is what the voice reads.
 // Mock mode: no ELEVENLABS_API_KEY -> /audio is 503 and the web falls back to speechSynthesis.
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { posix } from "node:path";
 import { Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type { Assignment, BriefKind, BriefRequest, BriefResponse, ServerToScout, Source, UserId } from "../../shared/types.ts";
 import * as db from "./db.ts";
 import * as hub from "./hub.ts";
-import { displayArea } from "./areas.ts";
-import { complete } from "./claude.ts";
+import { displayArea, overlaps } from "./areas.ts";
+import { toSpoken } from "./spoken.ts";
 
 const EL_KEY = process.env.ELEVENLABS_API_KEY;
 const EL_VOICE = process.env.ELEVENLABS_VOICE_ID || "JBFqnCBsd6RMkjVDRZzb"; // public premade voice ("George")
 const EL_MODEL = "eleven_flash_v2_5";
 const EL_AGENT = process.env.ELEVENLABS_AGENT_ID;
 const OVERDUE_MIN = Number(process.env.OVERDUE_MIN ?? 20);
+const MAX_WORDS = 120;
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
-console.log(`[brief] script: ${process.env.LLM_URL ? "manager review via LLM_URL (template fallback)" : "template over DB data"}`);
-console.log(`[brief] talk-back agent: ${EL_AGENT && EL_KEY ? EL_AGENT : "none (manager review plays TTS only)"}`);
+console.log(`[brief] script: relevance-filtered template over DB data (display script + spoken text)`);
+console.log(`[brief] talk-back agent: ${EL_AGENT && EL_KEY ? EL_AGENT : "none (calls play TTS only)"}`);
 console.log(`[brief] voice: ${EL_KEY ? `ElevenLabs ${EL_MODEL}, voice ${EL_VOICE}` : "MOCK (no ELEVENLABS_API_KEY: /audio returns 503, web uses speechSynthesis)"}`);
 
 const teamJson = JSON.parse(readFileSync(new URL("../../shared/team.json", import.meta.url), "utf8")) as { manager?: string };
 const MANAGER: UserId = teamJson.manager ?? "yuvi";
+void MANAGER;
 
 const nameOf = (u: string) => db.getUser(u)?.name ?? u.charAt(0).toUpperCase() + u.slice(1);
 const cutoffIso = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 const firstSentence = (t: string) => (t.match(/^.*?[.!?](\s|$)/)?.[0] ?? t).trim();
+const sentence = (t: string) => { const s = t.replace(/\s+/g, " ").trim(); return s.charAt(0).toUpperCase() + s.slice(1).replace(/([^.!?"])$/, "$1."); };
+const unprefix = (t: string) => t.replace(/^\w+:\s*/, "").replace(/[.!?]+$/, "");
 
-// ---------- storage (tables already exist in db.ts) ----------
-interface BriefRow { id: string; for: string; kind: BriefKind; script: string; sources: string; audio: Uint8Array | null; at: string }
+// ---------- storage ----------
+try { db.db.exec(`ALTER TABLE briefs ADD COLUMN spoken TEXT`); } catch { /* already there */ }
 
-function saveBrief(forUser: string, kind: BriefKind, script: string, sources: Source[], assignmentId?: string): BriefResponse {
+type BriefOut = BriefResponse & { spoken: string };
+interface BriefRow { id: string; for: string; kind: BriefKind; script: string; spoken: string | null; sources: string; audio: Uint8Array | null; at: string }
+
+function saveBrief(forUser: string, kind: BriefKind, script: string, sources: Source[], assignmentId?: string): BriefOut {
   const id = randomUUID();
-  db.db.prepare(`INSERT INTO briefs (id, "for", kind, script, sources, assignment_id, at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-    id, forUser, kind, script, JSON.stringify(sources), assignmentId ?? null, new Date().toISOString(),
+  const spoken = toSpoken(script);
+  db.db.prepare(`INSERT INTO briefs (id, "for", kind, script, spoken, sources, assignment_id, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    id, forUser, kind, script, spoken, JSON.stringify(sources), assignmentId ?? null, new Date().toISOString(),
   );
-  return { id, kind, script, sources, audioUrl: `/brief/${id}/audio` };
+  return { id, kind, script, spoken, sources, audioUrl: `/brief/${id}/audio` };
 }
 
 const getBrief = (id: string) => db.db.prepare(`SELECT * FROM briefs WHERE id = ?`).get(id) as BriefRow | undefined;
-const toResponse = (r: BriefRow): BriefResponse => ({ id: r.id, kind: r.kind, script: r.script, sources: JSON.parse(r.sources), audioUrl: `/brief/${r.id}/audio` });
+const spokenOf = (r: BriefRow) => r.spoken ?? toSpoken(r.script);
+const toResponse = (r: BriefRow): BriefOut => ({ id: r.id, kind: r.kind, script: r.script, spoken: spokenOf(r), sources: JSON.parse(r.sources), audioUrl: `/brief/${r.id}/audio` });
 
+const ASSIGN_COLS = `a.id, a."from", a."to", a.text, a.status, a.at`;
 function getAssignment(id: string): Assignment | undefined {
-  return db.db.prepare(`SELECT id, "from", "to", text, status, at FROM assignments WHERE id = ?`).get(id) as Assignment | undefined;
+  return db.db.prepare(`SELECT ${ASSIGN_COLS} FROM assignments a WHERE a.id = ?`).get(id) as Assignment | undefined;
 }
 function openAssignments(team: string): Assignment[] {
   return db.db.prepare(
-    `SELECT a.id, a."from", a."to", a.text, a.status, a.at FROM assignments a JOIN users u ON u.user = a."to"
+    `SELECT ${ASSIGN_COLS} FROM assignments a JOIN users u ON u.user = a."to"
      WHERE u.team = ? AND a.status = 'open' ORDER BY a.at DESC LIMIT 10`,
   ).all(team) as unknown as Assignment[];
 }
 
-// ---------- context gathering ----------
-interface Ctx { notes: string[]; sources: Source[]; facts: { who: string; line: string; mine?: boolean }[] }
+// ---------- relevance: files, path prefixes, imports ----------
+const norm = (f: string) => f.replace(/\\/g, "/").replace(/^file:/, "").replace(/^\.\//, "").trim();
+const noExt = (f: string) => f.replace(/\.(tsx?|jsx?|mjs|cjs)$/, "").toLowerCase();
+const PATH_RE = /(?<![\w/])(?:[\w.-]+\/)+[\w.-]+\.\w+/g;
 
-function gather(forUser: string, kind: BriefKind, sinceMin: number): Ctx {
-  const me = db.ensureUser(forUser);
-  const myArea = db.latestClaim(forUser)?.area;
-  const cutoff = cutoffIso(sinceMin);
-  const ctx: Ctx = { notes: [], sources: [], facts: [] };
-  const others = db.teamUsers(me.team).filter((u) => u.user !== forUser);
+/** Files a user is on: claim.files, file: refs, and paths named in their latest summary. Newest info only. */
+function filesOf(user: string): string[] {
+  const claim = db.latestClaim(user);
+  const sum = db.latestSummary(user);
+  const out = new Set<string>();
+  for (const f of claim?.files ?? []) out.add(norm(f));
+  for (const r of sum?.refs ?? []) if (r.startsWith("file:")) out.add(norm(r));
+  for (const m of sum?.text.match(PATH_RE) ?? []) out.add(norm(m));
+  return [...out].filter(Boolean);
+}
 
-  for (const u of others) {
-    const claim = db.latestClaim(u.user);
-    const sum = db.latestSummary(u.user);
-    const area = claim ? displayArea(claim.area) : undefined;
-    const mine = !!(myArea && claim && claim.area === myArea);
-    if (sum) {
-      const age = db.ageSec(sum.at);
-      ctx.notes.push(`${u.name} (${Math.round(age / 60)} min ago${area ? `, in ${area}` : ""}): ${sum.text}${sum.refs.length ? ` [refs: ${sum.refs.join(", ")}]` : ""}`);
-      ctx.sources.push({ label: `${u.name}'s laptop`, ageSec: age });
-      ctx.facts.push({ who: u.name, line: firstSentence(sum.text), mine });
-    } else if (claim) {
-      ctx.notes.push(`${u.name} is working in ${area}${claim.files?.length ? ` (files: ${claim.files.join(", ")})` : ""}`);
-      ctx.sources.push({ label: `claim ${area}`, ageSec: db.ageSec(claim.since) });
-      ctx.facts.push({ who: u.name, line: `${u.name} is in ${area}${claim.files?.[0] ? `, touching ${claim.files[0]}` : ""}.`, mine });
+/** Shared leading path segments (2+ = same neighbourhood, e.g. server/src/a.ts vs server/src/b.ts). */
+function prefixLen(a: string, b: string): number {
+  const A = a.toLowerCase().split("/"), B = b.toLowerCase().split("/");
+  let i = 0;
+  while (i < A.length && i < B.length && A[i] === B[i]) i++;
+  return i;
+}
+
+const importCache = new Map<string, Set<string>>();
+/** Repo-relative, extensionless targets of a file's relative imports (read from this checkout). */
+function importsOf(rel: string): Set<string> {
+  const hit = importCache.get(rel);
+  if (hit) return hit;
+  const out = new Set<string>();
+  try {
+    const src = readFileSync(posix.join(REPO_ROOT, rel), "utf8");
+    for (const m of src.matchAll(/(?:from|import)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g)) out.add(noExt(posix.normalize(posix.join(posix.dirname(rel), m[1]))));
+  } catch { /* not in this checkout */ }
+  importCache.set(rel, out);
+  return out;
+}
+
+const areaFileCache = new Map<string, string[]>();
+/** Source files under a repo area's folder in this checkout (bounded walk). */
+function areaFiles(area: string | undefined): string[] {
+  if (!area || !area.startsWith("repo:")) return [];
+  const dir = displayArea(area);
+  const cached = areaFileCache.get(dir);
+  if (cached) return cached;
+  const out: string[] = [];
+  const walk = (rel: string, depth: number) => {
+    if (out.length >= 300 || depth > 4) return;
+    let names: string[] = [];
+    try { names = readdirSync(posix.join(REPO_ROOT, rel)); } catch { return; }
+    for (const n of names) {
+      if (n === "node_modules" || n === "dist" || n.startsWith(".")) continue;
+      const p = posix.join(rel, n);
+      try {
+        if (statSync(posix.join(REPO_ROOT, p)).isDirectory()) walk(p, depth + 1);
+        else if (/\.(tsx?|jsx?|mjs)$/.test(n)) out.push(p);
+      } catch { /* skip */ }
     }
+  };
+  if (dir && !dir.includes("..") && existsSync(posix.join(REPO_ROOT, dir))) walk(dir, 0);
+  areaFileCache.set(dir, out);
+  return out;
+}
+
+/** First file in `targets` that something in `importers` imports, with the importer. */
+function importLink(importers: string[], targets: string[]): { target: string; importer: string } | undefined {
+  for (const t of targets) {
+    const key = noExt(t);
+    const importer = importers.find((f) => noExt(f) !== key && importsOf(f).has(key));
+    if (importer) return { target: t, importer };
+  }
+  return undefined;
+}
+
+// ---------- hits: one line each, scored by how much it matters to the listener ----------
+interface Hit { score: number; line: string; source: Source; action?: string; who?: string }
+
+function relevantHits(forUser: string, sinceMin: number, skipAssignment?: string): Hit[] {
+  const me = db.ensureUser(forUser);
+  const myClaim = db.latestClaim(forUser);
+  const myArea = myClaim?.area;
+  const myFiles = filesOf(forUser);
+  const myAreaFiles = areaFiles(myArea);
+  const cutoff = cutoffIso(sinceMin);
+  const hits: Hit[] = [];
+  const team = db.teamUsers(me.team).filter((u) => u.user !== forUser);
+  const inMyArea = (area: string, files: string[] = []) =>
+    (!!myArea && (area === myArea || overlaps(area, myArea))) || files.some((f) => myFiles.some((m) => prefixLen(f, m) >= 2));
+
+  // Collisions involving me.
+  for (const o of db.recentOverlaps(me.team).filter((o) => o.at >= cutoff && o.verdict !== "different" && o.users.includes(forUser))) {
+    const other = nameOf(o.users[0] === forUser ? o.users[1] : o.users[0]);
+    hits.push({ score: 100, who: other, line: `You and ${other} are both in ${displayArea(o.area)}, and Zipline flagged it: ${o.reason}.`, source: { label: `overlap ${displayArea(o.area)}`, ageSec: db.ageSec(o.at) } });
   }
 
+  // Assignments to or from me.
+  for (const a of openAssignments(me.team)) {
+    if (a.id === skipAssignment) continue;
+    const min = Math.round(db.ageSec(a.at) / 60);
+    if (a.to === forUser) hits.push({ score: 90, who: nameOf(a.from), line: `${nameOf(a.from)} asked you to ${unprefix(a.text)}.`, source: { label: `assignment from ${nameOf(a.from)}`, ageSec: db.ageSec(a.at) } });
+    else if (a.from === forUser) hits.push({ score: 85, who: nameOf(a.to), line: `Your ask to ${nameOf(a.to)}, "${unprefix(a.text)}", is still open${min >= OVERDUE_MIN ? ` after ${min} minutes` : ""}.`, source: { label: `assignment ${nameOf(a.to)}`, ageSec: db.ageSec(a.at) } });
+  }
+
+  // Fails in my area (or on my files).
   for (const f of db.recentFails(sinceMin)) {
+    if (f.user === forUser) continue;
     const u = db.getUser(f.user);
     if (!u || u.team !== me.team) continue;
-    ctx.notes.push(`FAILED (${nameOf(f.user)}, ${displayArea(f.area)}): ${f.text}`);
-    ctx.sources.push({ label: `fail ${nameOf(f.user)}`, ageSec: db.ageSec(f.at) });
-    ctx.facts.push({ who: nameOf(f.user), line: `${nameOf(f.user)} hit a wall in ${displayArea(f.area)}: ${f.text}`, mine: myArea === f.area });
+    const named = f.text.match(PATH_RE)?.map(norm) ?? [];
+    if (!inMyArea(f.area, [...named, ...filesOf(f.user)])) continue;
+    hits.push({ score: 80, who: u.name, line: `${u.name} is stuck in ${displayArea(f.area)}, your area: ${f.text.replace(/[.!?]$/, "")}.`, source: { label: `fail ${u.name}`, ageSec: db.ageSec(f.at) } });
   }
 
-  for (const o of db.recentOverlaps(me.team).filter((o) => o.at >= cutoff && o.verdict !== "different")) {
-    const [a, b] = o.users.map(nameOf);
-    ctx.notes.push(`OVERLAP (${o.verdict}): ${a} and ${b} in ${displayArea(o.area)}: ${o.reason}`);
-    ctx.sources.push({ label: `overlap ${displayArea(o.area)}`, ageSec: db.ageSec(o.at) });
-    ctx.facts.push({ who: a, line: `${a} and ${b} are both in ${displayArea(o.area)}, and Zipline flagged it.`, mine: o.users.includes(forUser) });
-  }
-
-  if (kind !== "assignment") {
-    for (const a of openAssignments(me.team)) {
-      if (kind === "catchup" && a.to !== forUser) continue;
-      ctx.notes.push(`OPEN ASSIGNMENT from ${nameOf(a.from)} to ${nameOf(a.to)}: ${a.text}`);
-      ctx.sources.push({ label: `assignment ${nameOf(a.to)}`, ageSec: db.ageSec(a.at) });
-      ctx.facts.push({ who: nameOf(a.to), line: `${nameOf(a.from)} asked ${a.to === forUser ? "you" : nameOf(a.to)} to ${a.text.replace(/^\w+:\s*/, "")}.`, mine: a.to === forUser });
-    }
-  }
-  // Mine first, so the catch-up leads with what touches your area.
-  ctx.facts.sort((x, y) => Number(!!y.mine) - Number(!!x.mine));
-  return ctx;
-}
-
-// ---------- script ----------
-function templateScript(kind: BriefKind, listener: string, ctx: Ctx, assignment?: Assignment): string {
-  const lines = ctx.facts.slice(0, 5).map((f) => f.line.replace(/\s+/g, " ").trim().replace(/([^.!?])$/, "$1."));
-  let open: string;
-  if (kind === "assignment" && assignment) open = `Hi ${listener}, ${nameOf(assignment.from)} has a task for you: ${assignment.text.replace(/[.!?]?$/, ".")}`;
-  else if (kind === "manager_digest") open = `Hi ${listener}, here's your team in the last half hour.`;
-  else open = `Hi ${listener}, here's what you missed.`;
-  const ctxIntro = kind === "assignment" && lines.length ? "Here's the context around it." : "";
-  const body = lines.length ? lines.join(" ") : "It's been quiet: no new updates from the team.";
-  const words = [open, ctxIntro, body, "That's it."].filter(Boolean).join(" ").split(/\s+/);
-  return words.slice(0, 150).join(" ");
-}
-
-
-// ---------- manager review (manager_digest) ----------
-// Per teammate: what they're on, blockers/fails, collisions, overdue assignments; then one suggested action.
-interface Review { script: string; notes: string; sources: Source[] }
-
-function managerReview(forUser: string, sinceMin: number): Review {
-  const me = db.ensureUser(forUser);
-  const cutoff = cutoffIso(sinceMin);
-  const sources: Source[] = [];
-  const notes: string[] = [];
-  const said: string[] = [];
-  const fails = db.recentFails(sinceMin);
-  const overlapsNow = db.recentOverlaps(me.team).filter((o) => o.at >= cutoff && o.verdict !== "different");
-  const open = openAssignments(me.team);
-  let action: string | null = null;
-
-  for (const u of db.teamUsers(me.team).filter((x) => x.user !== forUser)) {
+  // Teammates whose files touch mine. Best single reason per person.
+  for (const u of team) {
     const claim = db.latestClaim(u.user);
     const sum = db.latestSummary(u.user);
-    const area = claim ? displayArea(claim.area) : undefined;
-    const parts: string[] = [];
-    if (sum) {
-      parts.push(firstSentence(sum.text).replace(/[.!?]$/, ""));
-      sources.push({ label: `${u.name}'s laptop`, ageSec: db.ageSec(sum.at) });
-    } else if (claim && area) {
-      parts.push(`${u.name} is on ${area}${claim.files?.[0] ? `, in ${claim.files[0]}` : ""}`);
-      sources.push({ label: `claim ${area}`, ageSec: db.ageSec(claim.since) });
-    } else continue;
-    const f = fails.find((x) => x.user === u.user);
-    if (f) {
-      parts.push(`blocked: ${f.text.replace(/[.!?]$/, "")}`);
-      sources.push({ label: `fail ${u.name}`, ageSec: db.ageSec(f.at) });
-      action ??= `unblock ${u.name} on ${displayArea(f.area)}`;
-    }
-    const o = overlapsNow.find((x) => x.users[1] === u.user);
-    if (o) {
-      const other = nameOf(o.users[0]);
-      parts.push(`colliding with ${other} in ${displayArea(o.area)}`);
-      sources.push({ label: `overlap ${displayArea(o.area)}`, ageSec: db.ageSec(o.at) });
-      action ??= `get ${u.name} and ${other} to split ${displayArea(o.area)}`;
-    }
-    const late = open.find((a) => a.to === u.user && db.ageSec(a.at) > OVERDUE_MIN * 60);
-    if (late) {
-      parts.push(`your ask "${late.text}" is still open after ${Math.round(db.ageSec(late.at) / 60)} minutes`);
-      sources.push({ label: `assignment ${u.name}`, ageSec: db.ageSec(late.at) });
-      action ??= `check in with ${u.name} on ${late.text}`;
-    }
-    const line = parts.join("; ") + ".";
-    said.push(line.charAt(0).toUpperCase() + line.slice(1));
-    notes.push(`${u.name}${area ? ` (${area})` : ""}: ${sum ? sum.text : parts[0]}${f ? ` | FAIL: ${f.text}` : ""}${o ? ` | OVERLAP with ${nameOf(o.users[0])}: ${o.reason}` : ""}${late ? ` | OVERDUE ASSIGNMENT (${Math.round(db.ageSec(late.at) / 60)} min): ${late.text}` : ""}`);
+    const theirs = filesOf(u.user);
+    const fresh = sum ? db.ageSec(sum.at) < 15 * 60 : false;
+    const src: Source = sum ? { label: `${u.name}'s laptop`, ageSec: db.ageSec(sum.at) } : { label: `claim ${claim ? displayArea(claim.area) : u.name}`, ageSec: claim ? db.ageSec(claim.since) : 0 };
+    const verb = fresh ? "just edited" : "has been editing";
+    const same = theirs.find((f) => myFiles.some((m) => m.toLowerCase() === f.toLowerCase()));
+    const theyFeedMe = importLink([...myFiles, ...myAreaFiles], theirs);
+    const iFeedThem = importLink([...theirs, ...areaFiles(claim?.area)], myFiles);
+    let hit: Hit | undefined;
+    if (same) hit = { score: 70, line: `${u.name} ${verb} ${same}, which you're working on too.` } as Hit;
+    else if (theyFeedMe) hit = { score: 65, line: `${u.name} ${verb} ${theyFeedMe.target}, which your ${theyFeedMe.importer} imports.` } as Hit;
+    else if (iFeedThem) hit = { score: 55, line: `${u.name}'s ${iFeedThem.importer} imports ${iFeedThem.target}, which you're changing, so give ${u.name} a heads-up before you break it.` } as Hit;
+    else if (claim && inMyArea(claim.area, theirs)) hit = { score: 40, line: `${u.name} is in your area too: ${sum ? firstSentence(sum.text) : `working in ${displayArea(claim.area)}.`}` } as Hit;
+    if (hit) hits.push({ ...hit, who: u.name, source: src });
   }
-  for (const a of open.filter((a) => db.ageSec(a.at) <= OVERDUE_MIN * 60)) notes.push(`Open assignment for ${nameOf(a.to)}: ${a.text}`);
-
-  const words = [
-    `Hi ${me.name}, here's your team review.`,
-    ...(said.length ? said : ["No updates from the team yet."]),
-    action ? `My suggestion: ${action}.` : "Nothing needs you right now.",
-  ].join(" ").split(/\s+/);
-  return { script: words.slice(0, 150).join(" "), notes: notes.join("\n"), sources };
+  return hits.sort((a, b) => b.score - a.score);
 }
 
-const REVIEW_SYSTEM = `You write the spoken script for a short voice call in which Zipline reviews a software team for their manager.
-At most 150 words, plain spoken English, no markdown, no lists, no emojis. Address the manager as "you".
-Go teammate by teammate: what they are on (name real files or areas), any blocker or failure, any collision with a teammate, any overdue assignment.
-Finish with exactly one suggested action for the manager. Never invent anything that is not in the notes.`;
-
-/** Local LLM (LLM_URL, via claude.ts's hosted-model path) first; template on unset/failure. Never Anthropic. */
-async function managerScript(forUser: string, sinceMin: number): Promise<{ script: string; sources: Source[] }> {
-  const r = managerReview(forUser, sinceMin);
-  if (process.env.LLM_URL && r.notes) {
-    const text = await complete(REVIEW_SYSTEM, `Manager: ${nameOf(forUser)}\nTeam notes:\n${r.notes}`, { maxTokens: 350 });
-    if (text) return { script: text.replace(/[*#_`]/g, "").split(/\s+/).slice(0, 160).join(" "), sources: r.sources };
+/** Join sentences until the word budget runs out. */
+function fit(parts: string[], max = MAX_WORDS): string {
+  const out: string[] = [];
+  let n = 0;
+  for (const p of parts.filter(Boolean)) {
+    const w = p.split(/\s+/).length;
+    if (n + w > max && out.length) break;
+    out.push(p);
+    n += w;
   }
-  return { script: r.script, sources: r.sources };
+  return out.join(" ").split(/\s+/).slice(0, max).join(" ");
 }
 
-export async function createBrief(req: BriefRequest): Promise<BriefResponse> {
+/** Keep one line per person (their highest-scoring), max `n`. */
+function topHits(hits: Hit[], n: number): Hit[] {
+  const seen = new Set<string>();
+  const out: Hit[] = [];
+  for (const h of hits) {
+    const key = `${h.who}:${h.score >= 80 ? h.score : "rel"}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(h);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+// ---------- catchup ----------
+function catchupBrief(forUser: string, sinceMin: number): { script: string; sources: Source[] } {
+  const hits = topHits(relevantHits(forUser, sinceMin), 3);
+  const name = nameOf(forUser);
+  if (!hits.length) return { script: `Hi ${name}. Nothing from the team touches your work right now.`, sources: [] };
+  return { script: fit([`Hi ${name}.`, ...hits.map((h) => sentence(h.line))]), sources: hits.map((h) => h.source) };
+}
+
+// ---------- assignment ----------
+const STOP = new Set(["about", "after", "before", "their", "there", "these", "those", "which", "while", "should", "could", "would", "make", "sure", "today", "please"]);
+
+function assignmentBrief(forUser: string, a: Assignment, sinceMin: number): { script: string; sources: Source[] } {
+  const me = db.ensureUser(forUser);
+  const intro = `Hi ${nameOf(forUser)}, ${nameOf(a.from)} has a task for you: ${unprefix(a.text)}.`;
+  const hits = relevantHits(forUser, sinceMin, a.id).filter((h) => !h.line.startsWith(`${nameOf(a.from)} asked you`));
+  // Teammates whose current work mentions what the task is about (endpoint, path, or a distinctive word).
+  const keys = new Set(
+    (a.text.toLowerCase().match(/[a-z][\w.-]{3,}/g) ?? []).map((k) => k.replace(/^\//, "")).filter((k) => !STOP.has(k)),
+  );
+  for (const w of a.text.match(/\/([a-z][\w-]*)/gi) ?? []) keys.add(w.slice(1).toLowerCase());
+  for (const u of db.teamUsers(me.team)) {
+    if (u.user === forUser || u.user === a.from) continue;
+    const sum = db.latestSummary(u.user);
+    const claim = db.latestClaim(u.user);
+    const hay = `${sum?.text ?? ""} ${claim ? displayArea(claim.area) : ""} ${filesOf(u.user).join(" ")}`.toLowerCase();
+    const k = [...keys].find((k) => k.length >= 4 && new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(hay));
+    if (k && sum) hits.push({ score: 60, who: u.name, line: `${u.name} is working near it: ${firstSentence(sum.text)}`, source: { label: `${u.name}'s laptop`, ageSec: db.ageSec(sum.at) } });
+  }
+  const ctx = topHits(hits.sort((x, y) => y.score - x.score), 2);
+  const sources: Source[] = [{ label: `assignment from ${nameOf(a.from)}`, ageSec: db.ageSec(a.at) }, ...ctx.map((h) => h.source)];
+  const body = ctx.length ? ["Here's what matters for it.", ...ctx.map((h) => sentence(h.line))] : ["Nothing else on the team touches it right now."];
+  return { script: fit([intro, ...body]), sources };
+}
+
+// ---------- manager digest: only what needs the manager ----------
+function managerBrief(forUser: string, sinceMin: number): { script: string; sources: Source[] } {
+  const me = db.ensureUser(forUser);
+  const cutoff = cutoffIso(sinceMin);
+  const lines: string[] = [];
+  const sources: Source[] = [];
+  let action: string | null = null;
+  const teamOthers = db.teamUsers(me.team).filter((u) => u.user !== forUser);
+  const ids = new Set(teamOthers.map((u) => u.user));
+
+  const fails = db.recentFails(sinceMin).filter((f) => ids.has(f.user));
+  const seenFail = new Set<string>();
+  for (const f of fails) {
+    if (seenFail.has(f.user)) continue;
+    seenFail.add(f.user);
+    lines.push(`${nameOf(f.user)} is blocked in ${displayArea(f.area)}: ${f.text.replace(/[.!?]$/, "")}.`);
+    sources.push({ label: `fail ${nameOf(f.user)}`, ageSec: db.ageSec(f.at) });
+    action ??= `unblock ${nameOf(f.user)} on ${displayArea(f.area)}`;
+  }
+  for (const o of db.recentOverlaps(me.team).filter((o) => o.at >= cutoff && o.verdict !== "different").slice(0, 2)) {
+    const [a, b] = o.users.map(nameOf);
+    lines.push(`${a} and ${b} are colliding in ${displayArea(o.area)}: ${o.reason.replace(/[.!?]$/, "")}.`);
+    sources.push({ label: `overlap ${displayArea(o.area)}`, ageSec: db.ageSec(o.at) });
+    action ??= `get ${a} and ${b} to split ${displayArea(o.area)}`;
+  }
+  for (const a of openAssignments(me.team).slice(0, 3)) {
+    const min = Math.round(db.ageSec(a.at) / 60);
+    const late = min >= OVERDUE_MIN;
+    lines.push(late
+      ? `${nameOf(a.to)}'s task "${unprefix(a.text)}" is overdue, open for ${min} minutes.`
+      : `${nameOf(a.to)} still has "${unprefix(a.text)}" open.`);
+    sources.push({ label: `assignment ${nameOf(a.to)}`, ageSec: db.ageSec(a.at) });
+    if (late) action ??= `check in with ${nameOf(a.to)} on ${unprefix(a.text)}`;
+  }
+  const idle = teamOthers.filter((u) => db.stateOf(u) === "idle").map((u) => u.name);
+  const offline = teamOthers.filter((u) => db.stateOf(u) === "offline").map((u) => u.name);
+  const list = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0]);
+  if (idle.length) { lines.push(`${list(idle)} ${idle.length > 1 ? "have" : "has"} gone idle.`); action ??= `ping ${idle[0]}`; }
+  if (offline.length) lines.push(`${list(offline)} ${offline.length > 1 ? "are" : "is"} offline.`);
+
+  const close = action ? `My suggestion: ${action}.` : lines.length ? "Nothing is urgent, so let them keep going." : "Nothing needs you right now, so let them keep going.";
+  const intro = `Hi ${me.name}, here's what needs you.`;
+  const budget = MAX_WORDS - close.split(/\s+/).length;
+  const script = lines.length ? `${fit([intro, ...lines], budget)} ${close}` : `Hi ${me.name}. ${close}`;
+  return { script, sources };
+}
+
+export async function createBrief(req: BriefRequest): Promise<BriefOut> {
   const kind: BriefKind = (["assignment", "manager_digest", "catchup"] as const).includes(req.kind) ? req.kind : "catchup";
+  const sinceMin = req.sinceMin ?? 30;
   const assignment = req.assignmentId ? getAssignment(req.assignmentId) : undefined;
-  if (kind === "manager_digest") {
-    const m = await managerScript(req.for, req.sinceMin ?? 30);
-    return saveBrief(req.for, kind, m.script, m.sources.slice(0, 8));
-  }
-  const ctx = gather(req.for, kind, req.sinceMin ?? 30);
-  if (assignment) ctx.sources.unshift({ label: `assignment from ${nameOf(assignment.from)}`, ageSec: db.ageSec(assignment.at) });
-  const script = templateScript(kind, nameOf(req.for), ctx, assignment);
-  return saveBrief(req.for, kind, script, ctx.sources.slice(0, 8), assignment?.id);
+  const b = kind === "manager_digest" ? managerBrief(req.for, sinceMin)
+    : kind === "assignment" && assignment ? assignmentBrief(req.for, assignment, sinceMin)
+    : catchupBrief(req.for, sinceMin);
+  return saveBrief(req.for, kind, b.script, b.sources.slice(0, 8), assignment?.id);
 }
 
 // ---------- TTS ----------
 const inflight = new Map<string, Promise<Buffer | null>>();
 
-function ttsStream(text: string) {
+function ttsStream(text: string, normalize = true) {
   return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(EL_VOICE)}/stream?output_format=mp3_44100_128`, {
     method: "POST",
     headers: { "xi-api-key": EL_KEY!, "content-type": "application/json", accept: "audio/mpeg" },
-    body: JSON.stringify({ text, model_id: EL_MODEL }),
+    body: JSON.stringify({ text, model_id: EL_MODEL, ...(normalize ? { apply_text_normalization: "on" } : {}) }),
     signal: AbortSignal.timeout(30_000),
   });
+}
+
+// ---------- assignments (shared by /assign and POST /tasks) ----------
+type AssignBody = Omit<Assignment, "id" | "at" | "status"> & { status?: Assignment["status"] };
+
+async function assign(b: AssignBody) {
+  const target = db.ensureUser(b.to);
+  db.ensureUser(b.from);
+  const assignment: Assignment = { id: randomUUID(), from: b.from, to: b.to, text: String(b.text).slice(0, 300), at: new Date().toISOString(), status: b.status === "done" ? "done" : "open" };
+  db.db.prepare(`INSERT INTO assignments (id, "from", "to", text, status, at) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    assignment.id, assignment.from, assignment.to, assignment.text, assignment.status, assignment.at,
+  );
+  db.addFeed(target.team, "assign", `${nameOf(b.from)} → ${target.name}: ${assignment.text}`);
+  const brief = await createBrief({ for: b.to, kind: "assignment", assignmentId: assignment.id });
+  const msg: ServerToScout = { type: "incoming_call", briefId: brief.id, kind: "assignment", from: b.from, title: `${nameOf(b.from)} assigned you a task` };
+  const delivered = hub.send(b.to, msg);
+  db.addFeed(target.team, "brief", `Zipline called ${target.name} about ${nameOf(b.from)}'s ask`);
+  return { ok: true, assignment, brief, delivered };
 }
 
 // ---------- routes ----------
 export default async function briefRoutes(app: FastifyInstance) {
   const bad = (msg: string) => ({ ok: false, error: msg });
 
-  app.post<{ Body: Omit<Assignment, "id" | "at" | "status"> & { status?: Assignment["status"] } }>("/assign", async (req, reply) => {
+  const assignHandler = async (req: { body?: AssignBody }, reply: import("fastify").FastifyReply) => {
     const b = req.body;
     if (!b?.from || !b?.to || !b?.text) return reply.code(400).send(bad("from, to and text are required"));
-    const target = db.ensureUser(b.to);
-    db.ensureUser(b.from);
-    const assignment: Assignment = { id: randomUUID(), from: b.from, to: b.to, text: String(b.text).slice(0, 300), at: new Date().toISOString(), status: b.status === "done" ? "done" : "open" };
-    db.db.prepare(`INSERT INTO assignments (id, "from", "to", text, status, at) VALUES (?, ?, ?, ?, ?, ?)`).run(
-      assignment.id, assignment.from, assignment.to, assignment.text, assignment.status, assignment.at,
-    );
-    db.addFeed(target.team, "assign", `${nameOf(b.from)} → ${target.name}: ${assignment.text}`);
-    const brief = await createBrief({ for: b.to, kind: "assignment", assignmentId: assignment.id });
-    const msg: ServerToScout = { type: "incoming_call", briefId: brief.id, kind: "assignment", from: b.from, title: `${nameOf(b.from)} assigned you a task` };
-    const delivered = hub.send(b.to, msg);
-    db.addFeed(target.team, "brief", `Zipline called ${target.name} about ${nameOf(b.from)}'s ask`);
-    return { ok: true, assignment, brief, delivered };
+    return assign(b);
+  };
+  app.post<{ Body: AssignBody }>("/assign", assignHandler);
+  app.post<{ Body: AssignBody }>("/tasks", assignHandler);
+
+  app.get<{ Querystring: { user?: string } }>("/tasks", async (req, reply) => {
+    const user = req.query.user;
+    if (!user) return reply.code(400).send(bad("user is required"));
+    const tasks = db.db.prepare(`SELECT ${ASSIGN_COLS} FROM assignments a WHERE a."to" = ? ORDER BY a.at DESC LIMIT 100`).all(user) as unknown as Assignment[];
+    return { tasks: tasks.map((t) => ({ id: t.id, from: t.from, to: t.to, text: t.text, status: t.status === "done" ? "done" : "open", at: t.at })) };
+  });
+
+  app.post<{ Params: { id: string } }>("/tasks/:id/done", async (req, reply) => {
+    const r = db.db.prepare(`UPDATE assignments SET status = 'done' WHERE id = ?`).run(req.params.id);
+    if (!Number(r.changes)) return reply.code(404).send(bad("no such task"));
+    return { ok: true };
   });
 
   app.post<{ Body: BriefRequest & { ring?: boolean } }>("/brief", async (req, reply) => {
@@ -262,7 +395,8 @@ export default async function briefRoutes(app: FastifyInstance) {
     return r ? toResponse(r) : reply.code(404).send(bad("no such brief"));
   });
 
-  // Talk-back: a signed ElevenLabs Agent URL (the key stays here) plus the script for overrides.agent.firstMessage.
+  // Talk-back: a signed ElevenLabs Agent URL (the key stays here). `script` is the spoken text, because the web
+  // passes it as overrides.agent.firstMessage; `displayScript` keeps the exact paths.
   app.get<{ Params: { id: string } }>("/brief/:id/agent-session", async (req, reply) => {
     const r = getBrief(req.params.id);
     if (!r) return reply.code(404).send(bad("no such brief"));
@@ -273,7 +407,8 @@ export default async function briefRoutes(app: FastifyInstance) {
       });
       if (!res.ok) return reply.code(502).send(bad(`ElevenLabs HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`));
       const { signed_url } = (await res.json()) as { signed_url: string };
-      return { signedUrl: signed_url, agentId: EL_AGENT, script: r.script, kind: r.kind, for: r.for };
+      const spoken = spokenOf(r);
+      return { signedUrl: signed_url, agentId: EL_AGENT, script: spoken, spoken, displayScript: r.script, kind: r.kind, for: r.for };
     } catch (err) {
       return reply.code(502).send(bad(`signed URL failed: ${(err as Error).message}`));
     }
@@ -283,7 +418,7 @@ export default async function briefRoutes(app: FastifyInstance) {
     const r = getBrief(req.params.id);
     if (!r) return reply.code(404).send(bad("no such brief"));
     if (r.audio && r.audio.byteLength) return reply.type("audio/mpeg").send(Buffer.from(r.audio));
-    if (!EL_KEY) return reply.code(503).send({ ...bad("ELEVENLABS_API_KEY not set: use browser speech"), mock: true, script: r.script });
+    if (!EL_KEY) return reply.code(503).send({ ...bad("ELEVENLABS_API_KEY not set: use browser speech"), mock: true, script: r.script, spoken: spokenOf(r) });
 
     // Someone else is already generating this brief: wait for their bytes.
     const pending = inflight.get(r.id);
@@ -294,7 +429,13 @@ export default async function briefRoutes(app: FastifyInstance) {
 
     let res: Response;
     try {
-      res = await ttsStream(r.script);
+      res = await ttsStream(spokenOf(r));
+      // Some plans reject apply_text_normalization on flash models: retry once without it.
+      if (res.status === 400 || res.status === 422) {
+        const detail = (await res.text().catch(() => "")).slice(0, 200);
+        app.log.warn({ status: res.status, detail }, "elevenlabs rejected normalization, retrying without");
+        res = await ttsStream(spokenOf(r), false);
+      }
     } catch (err) {
       return reply.code(502).send(bad(`TTS request failed: ${(err as Error).message}`));
     }
