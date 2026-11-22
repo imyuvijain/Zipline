@@ -1,0 +1,468 @@
+<title>Murmur Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; the diagram and mockups break wider, each in its own scroll box. */
+:root{
+  --bg:#F3F5F7; --surface:#FFFFFF; --ink:#141922; --muted:#5A6472; --line:#DCE1E7;
+  --accent:#0B7A69; --accent-soft:#DDF1EC; --warn:#A35A06; --warn-soft:#FCEFD9;
+  --bad:#B42318; --bad-soft:#FCE6E3; --chip:#EEF1F4;
+  --f-display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"Inter",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E1217; --surface:#161B22; --ink:#E6EAF0; --muted:#97A1AF; --line:#2A313B;
+  --accent:#3CC4AE; --accent-soft:#12312C; --warn:#F0A93B; --warn-soft:#352711;
+  --bad:#F2776B; --bad-soft:#3A1916; --chip:#202733; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1217; --surface:#161B22; --ink:#E6EAF0; --muted:#97A1AF; --line:#2A313B;
+  --accent:#3CC4AE; --accent-soft:#12312C; --warn:#F0A93B; --warn-soft:#352711;
+  --bad:#F2776B; --bad-soft:#3A1916; --chip:#202733; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:1140px;margin:0 auto;padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:56px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(30px,4.4vw,44px);line-height:1.1}
+h2{font-size:24px}
+h3{font-size:16px}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.lede{color:var(--muted);font-size:17px}
+.mono{font-family:var(--f-mono);font-size:.88em}
+section{display:grid;gap:18px}
+.head{display:grid;gap:12px}
+.pillrow{display:flex;flex-wrap:wrap;gap:8px}
+.pill{font-family:var(--f-mono);font-size:12px;padding:4px 10px;border-radius:999px;background:var(--chip);color:var(--muted)}
+.pill.live{background:var(--accent-soft);color:var(--accent)}
+.scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+svg text{font-family:var(--f-body)}
+.sv-panel{fill:var(--surface);stroke:var(--line)}
+.sv-box{fill:var(--bg);stroke:var(--line)}
+.sv-hl{fill:var(--accent-soft);stroke:var(--accent)}
+.sv-warn{fill:var(--warn-soft);stroke:var(--warn)}
+.sv-t{fill:var(--ink);font-size:13px;font-weight:600}
+.sv-s{fill:var(--muted);font-size:11.5px}
+.sv-h{fill:var(--muted);font-size:11px;font-weight:600;letter-spacing:.08em}
+.sv-tool{fill:var(--accent);font-size:11px;font-weight:600}
+.sv-a{stroke:var(--accent);stroke-width:1.6;fill:none}
+.sv-a2{stroke:var(--warn);stroke-width:1.6;fill:none}
+.sv-int{stroke:var(--muted);stroke-width:1.2;fill:none}
+.sv-lab{fill:var(--accent);font-size:11.5px;font-weight:600}
+.sv-lab2{fill:var(--warn);font-size:11.5px;font-weight:600}
+.sv-strip{fill:var(--chip);stroke:var(--line)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;color:var(--muted);font-size:13px}
+.legend b{color:var(--ink);font-weight:600}
+
+/* Flows */
+.flows{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.flow{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;display:grid;gap:14px;align-content:start;min-width:0}
+.flow header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.flow .total{font-family:var(--f-mono);font-size:12px;color:var(--accent)}
+.flow.warnf .total{color:var(--warn)}
+ol.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:s}
+ol.steps li{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:start;counter-increment:s;font-size:14px}
+ol.steps li::before{content:counter(s);font-family:var(--f-mono);font-size:11px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--chip);color:var(--muted)}
+.who{font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:block}
+.t{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+
+/* Mockups */
+.screens{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px}
+.screen{display:grid;gap:10px;align-content:start;min-width:0}
+.screen .cap{display:grid;gap:2px}
+.screen .cap .n{font-family:var(--f-mono);font-size:11px;color:var(--accent);letter-spacing:.06em;text-transform:uppercase}
+.screen .cap p{color:var(--muted);font-size:13.5px}
+.dev{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 8px 24px -16px rgba(0,0,0,.35)}
+.bar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
+.dots{display:flex;gap:5px;margin-right:6px}.dots i{width:9px;height:9px;border-radius:50%;background:var(--line);display:block}
+.body{padding:14px;display:grid;gap:10px;font-size:13.5px}
+.row{display:flex;align-items:center;gap:10px;min-width:0}
+.row .grow{flex:1;min-width:0}
+.av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;background:var(--chip);color:var(--ink);flex:none}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.on{background:var(--accent)}.idle{background:var(--warn)}.off{background:var(--line)}
+.scope{font-family:var(--f-mono);font-size:11.5px;background:var(--chip);padding:2px 7px;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;display:inline-block}
+.age{font-family:var(--f-mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.sub{color:var(--muted);font-size:12.5px}
+.feed{border-top:1px solid var(--line);padding-top:10px;display:grid;gap:6px;font-size:12.5px}
+.feed div{display:grid;grid-template-columns:44px 1fr;gap:8px}
+.tag{font-family:var(--f-mono);font-size:10.5px;padding:1px 6px;border-radius:5px;font-weight:500}
+.tag.fail{background:var(--bad-soft);color:var(--bad)}
+.tag.work{background:var(--accent-soft);color:var(--accent)}
+.tag.sim{background:var(--chip);color:var(--muted)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{font:inherit;font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.menu{max-width:320px;margin-left:auto}
+.mi{display:flex;justify-content:space-between;gap:10px;font-size:13px}
+.check{color:var(--accent);font-weight:600}
+hr.s{border:0;border-top:1px solid var(--line);margin:2px 0}
+.bubble{padding:10px 12px;border-radius:12px;max-width:92%}
+.me{background:var(--accent);color:var(--surface);justify-self:end;border-bottom-right-radius:4px}
+.bot{background:var(--bg);border:1px solid var(--line);border-bottom-left-radius:4px;display:grid;gap:8px}
+.status{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.spin{width:10px;height:10px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}.wave i{animation:none}}
+.srcs{display:flex;flex-wrap:wrap;gap:6px}
+.src{font-family:var(--f-mono);font-size:10.5px;padding:2px 7px;border-radius:6px;background:var(--chip);color:var(--muted)}
+.src b{color:var(--accent);font-weight:500}
+.voice{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.wave{display:flex;gap:2px;align-items:center;height:16px}
+.wave i{width:3px;border-radius:2px;background:var(--accent);display:block;animation:w 1.1s ease-in-out infinite}
+.wave i:nth-child(1){height:6px}.wave i:nth-child(2){height:12px;animation-delay:.1s}.wave i:nth-child(3){height:16px;animation-delay:.2s}.wave i:nth-child(4){height:9px;animation-delay:.3s}.wave i:nth-child(5){height:13px;animation-delay:.4s}.wave i:nth-child(6){height:7px;animation-delay:.5s}
+@keyframes w{50%{transform:scaleY(.4)}}
+.notif{border-left:3px solid var(--warn);background:var(--warn-soft)}
+.notif.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.notif .body{gap:8px}
+.notif h4{margin:0;font-size:13.5px;font-family:var(--f-display)}
+.quote{font-style:italic}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tabs span{font-size:12px;padding:4px 10px;border-radius:7px;color:var(--muted)}
+.tabs span.sel{background:var(--chip);color:var(--ink);font-weight:600}
+.trow{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.trow:last-child{border-bottom:0}
+
+/* Tables */
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:600;white-space:nowrap}
+.decide{display:grid;gap:10px;counter-reset:d;margin:0;padding:0;list-style:none}
+.decide li{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:28px 1fr;gap:12px;counter-increment:d}
+.decide li::before{content:counter(d);font-family:var(--f-mono);font-size:12px;width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-weight:600}
+.decide b{display:block}
+.decide span{color:var(--muted);font-size:14px}
+</style>
+
+<div class="wrap">
+
+<header class="head">
+  <div class="eyebrow">Team 23 · proposal for review · not locked</div>
+  <h1>Murmur: what your team is doing, seconds old</h1>
+  <p class="lede">Every laptop runs a small local scout. It watches cheaply and all the time, keeps the raw activity on the laptop, and only spends model tokens when someone asks or when two people collide. Below: the whole system, every step of each flow, and what the person sees at each step.</p>
+  <div class="pillrow">
+    <span class="pill live">answers ≈ 5–12 s old</span>
+    <span class="pill">0 tokens when nobody asks</span>
+    <span class="pill">raw activity never leaves the laptop</span>
+    <span class="pill">DeLM board: append-only, claims, no coordinator</span>
+  </div>
+</header>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">01 · System</div>
+    <h2>Architecture</h2>
+    <p>Three places: each laptop, the team board on Maritime, and the surfaces where people ask. Teal arrows are the ask path. Amber arrows are collisions and dead ends. Numbers match the flows in section 02.</p>
+  </div>
+  <div class="scroll">
+  <svg viewBox="0 0 1100 700" width="1100" role="img" aria-label="Murmur architecture: laptop scout, team board on Maritime, ask surfaces">
+    <defs>
+      <marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="mw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--warn)"/></marker>
+      <marker id="mm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+    </defs>
+
+    <!-- Panels -->
+    <rect class="sv-panel" x="16" y="20" width="320" height="608" rx="14"/>
+    <text class="sv-h" x="36" y="50">EACH LAPTOP · ×4 REAL</text>
+    <text class="sv-tool" x="36" y="68">Ollama 3B · on device</text>
+
+    <rect class="sv-panel" x="440" y="20" width="330" height="608" rx="14"/>
+    <text class="sv-h" x="460" y="50">TEAM BOARD · CLOUD</text>
+    <text class="sv-tool" x="460" y="68">Maritime · Alter · Rowboat · Claude</text>
+
+    <rect class="sv-panel" x="864" y="20" width="220" height="608" rx="14"/>
+    <text class="sv-h" x="884" y="50">WHERE PEOPLE ASK</text>
+    <text class="sv-tool" x="884" y="68">ElevenLabs · assistant-ui</text>
+
+    <!-- Laptop boxes -->
+    <rect class="sv-box" x="36" y="90" width="282" height="52" rx="8"/><text class="sv-t" x="48" y="111">Collectors</text><text class="sv-s" x="48" y="129">window title · git · file saves · every 10 s</text>
+    <rect class="sv-box" x="36" y="156" width="282" height="52" rx="8"/><text class="sv-t" x="48" y="177">Privacy filter</text><text class="sv-s" x="48" y="195">app allowlist · secrets redacted</text>
+    <rect class="sv-hl" x="36" y="222" width="282" height="52" rx="8"/><text class="sv-t" x="48" y="243">Rolling buffer · last 30 min</text><text class="sv-s" x="48" y="261">stays on this laptop · 0 tokens</text>
+    <rect class="sv-box" x="36" y="288" width="282" height="52" rx="8"/><text class="sv-t" x="48" y="309">Claim deriver · no model</text><text class="sv-s" x="48" y="327">branch + paths + doc → area · on change</text>
+    <rect class="sv-box" x="36" y="354" width="282" height="52" rx="8"/><text class="sv-t" x="48" y="375">Tray + speaker</text><text class="sv-s" x="48" y="393">alerts · who asked · what was sent · pause</text>
+    <rect class="sv-box" x="36" y="420" width="282" height="52" rx="8"/><text class="sv-t" x="48" y="441">Trigger watcher</text><text class="sv-s" x="48" y="459">test fail · revert · stuck 10 min</text>
+    <rect class="sv-hl" x="36" y="486" width="282" height="52" rx="8"/><text class="sv-t" x="48" y="507">Local model · runs only when needed</text><text class="sv-s" x="48" y="525">focused summary of the buffer</text>
+    <rect class="sv-box" x="36" y="552" width="282" height="52" rx="8"/><text class="sv-t" x="48" y="573">Heartbeat · every 15 s</text><text class="sv-s" x="48" y="591">active · idle · offline</text>
+
+    <!-- Laptop internal arrows -->
+    <path class="sv-int" d="M177 142 V154" marker-end="url(#mm)"/>
+    <path class="sv-int" d="M177 208 V220" marker-end="url(#mm)"/>
+    <path class="sv-int" d="M177 274 V286" marker-end="url(#mm)"/>
+    <path class="sv-int" d="M177 472 V484" marker-end="url(#mm)"/>
+    <path class="sv-int" d="M36 248 H26 V512 H34" marker-end="url(#mm)"/>
+
+    <!-- Cloud boxes -->
+    <rect class="sv-box" x="456" y="90" width="298" height="52" rx="8"/><text class="sv-t" x="468" y="111">Alter · identity + scopes + audit log</text><text class="sv-s" x="468" y="129">who may ask about whom · every read logged</text>
+    <rect class="sv-box" x="456" y="156" width="298" height="52" rx="8"/><text class="sv-t" x="468" y="177">Answer cache · 3 min</text><text class="sv-s" x="468" y="195">fresh team answers get reused</text>
+    <rect class="sv-box" x="456" y="222" width="298" height="52" rx="8"/><text class="sv-t" x="468" y="243">Rollups + company memory</text><text class="sv-s" x="468" y="261">dept / company · Rowboat holds SOPs + past work</text>
+    <rect class="sv-box" x="456" y="288" width="298" height="52" rx="8"/><text class="sv-t" x="468" y="309">Claims + sessions</text><text class="sv-s" x="468" y="327">area → owner · first claim wins · expiry</text>
+    <rect class="sv-warn" x="456" y="354" width="298" height="52" rx="8"/><text class="sv-t" x="468" y="375">Collision detector</text><text class="sv-s" x="468" y="393">same area · same task · repeated dead end</text>
+    <rect class="sv-box" x="456" y="420" width="298" height="52" rx="8"/><text class="sv-t" x="468" y="441">Entries · append-only</text><text class="sv-s" x="468" y="459">WORKING · BLOCKED · FAIL · DONE · capped</text>
+    <rect class="sv-hl" x="456" y="486" width="298" height="52" rx="8"/><text class="sv-t" x="468" y="507">Ask router</text><text class="sv-s" x="468" y="525">picks whose laptops to ask · in parallel</text>
+    <rect class="sv-hl" x="456" y="552" width="298" height="52" rx="8"/><text class="sv-t" x="468" y="573">Query agent · Claude</text><text class="sv-s" x="468" y="591">answer + sources + age · counts from SQL</text>
+
+    <!-- Cloud internal arrows -->
+    <path class="sv-int" d="M605 340 V352" marker-end="url(#mm)"/>
+    <path class="sv-int" d="M605 420 V408" marker-end="url(#mm)"/>
+    <path class="sv-int" d="M605 538 V550" marker-end="url(#mm)"/>
+    <path class="sv-int" d="M605 208 V220" marker-end="url(#mm)"/>
+    <path class="sv-int" d="M754 578 H762 V182 H756" marker-end="url(#mm)"/>
+
+    <!-- Right boxes -->
+    <rect class="sv-box" x="880" y="90" width="188" height="118" rx="8"/><text class="sv-t" x="892" y="113">Simulated org</text><text class="sv-s" x="892" y="133">2–3 fake teams + 1 dept</text><text class="sv-s" x="892" y="151">seed script, labeled "sim"</text><text class="sv-tool" x="892" y="190">Expected Parrot: validation</text>
+    <rect class="sv-box" x="880" y="288" width="188" height="118" rx="8"/><text class="sv-t" x="892" y="311">Voice agent</text><text class="sv-s" x="892" y="331">ask aloud, hands on keys</text><text class="sv-s" x="892" y="349">speaks collision alerts</text><text class="sv-tool" x="892" y="388">ElevenLabs</text>
+    <rect class="sv-box" x="880" y="420" width="188" height="118" rx="8"/><text class="sv-t" x="892" y="443">Web board + chat</text><text class="sv-s" x="892" y="463">live team / dept / company</text><text class="sv-s" x="892" y="481">ages tick in real time</text><text class="sv-tool" x="892" y="520">assistant-ui · Wasp?</text>
+
+    <!-- Cross arrows: laptop ↔ board -->
+    <path class="sv-a" d="M318 314 H454" marker-end="url(#ma)"/><text class="sv-lab" x="340" y="306">① claim</text>
+    <path class="sv-a2" d="M456 380 H320" marker-end="url(#mw)"/><text class="sv-lab2" x="340" y="372">⑤ alert</text>
+    <path class="sv-a2" d="M318 446 H454" marker-end="url(#mw)"/><text class="sv-lab2" x="340" y="438">⑥ FAIL entry</text>
+    <path class="sv-a" d="M456 504 H320" marker-end="url(#ma)"/><text class="sv-lab" x="340" y="497">③ ask laptop</text>
+    <path class="sv-a" d="M318 520 H454" marker-end="url(#ma)"/><text class="sv-lab" x="340" y="536">④ summary</text>
+    <path class="sv-int" d="M318 578 C390 578 390 330 454 326" marker-end="url(#mm)"/><text class="sv-s" x="352" y="600">heartbeat</text>
+
+    <!-- Cross arrows: board ↔ surfaces -->
+    <path class="sv-a" d="M878 500 C820 500 820 512 756 512" marker-end="url(#ma)"/><text class="sv-lab" x="782" y="492">② ask</text>
+    <path class="sv-a" d="M754 590 C830 590 830 530 878 524" marker-end="url(#ma)"/><text class="sv-lab" x="790" y="614">⑦ answer</text>
+    <path class="sv-a2" d="M754 380 H878" marker-end="url(#mw)"/><text class="sv-lab2" x="774" y="372">⑤ voice line</text>
+    <path class="sv-int" d="M878 170 C820 170 820 248 756 248" marker-end="url(#mm)"/><text class="sv-s" x="782" y="200">seed</text>
+
+    <!-- Observability strip -->
+    <rect class="sv-strip" x="16" y="644" width="1068" height="40" rx="10"/>
+    <text class="sv-t" x="36" y="669">TraceRoot</text>
+    <text class="sv-s" x="112" y="669">traces every claim, ask, laptop summary and answer. Click any source chip in the UI and see the exact hop it came from.</text>
+  </svg>
+  </div>
+  <div class="legend">
+    <span><b>Teal</b> = ask path (pull, on demand)</span>
+    <span><b>Amber</b> = collisions and dead ends (push)</span>
+    <span><b>Grey</b> = internal / cheap, no model</span>
+    <span><b>Highlighted boxes</b> = where tokens are spent</span>
+  </div>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">02 · Every step</div>
+    <h2>The five flows</h2>
+    <p>Claims and heartbeats run all the time and use no model. The local model wakes only for an ask or a trigger. Claude runs only to compose an answer or a rollup.</p>
+  </div>
+  <div class="flows">
+    <article class="flow">
+      <header><h3>A · Always on</h3><span class="total">0 tokens</span></header>
+      <ol class="steps">
+        <li><div><span class="who">Laptop</span>Collectors read the frontmost window, git state and file saves.</div><span class="t">every 10 s</span></li>
+        <li><div><span class="who">Laptop</span>Privacy filter drops non-work apps and redacts secrets.</div><span class="t">&lt;1 ms</span></li>
+        <li><div><span class="who">Laptop</span>Events go into a 30-minute rolling buffer. Older events are deleted.</div><span class="t">local</span></li>
+        <li><div><span class="who">Laptop → Board</span>① If the work area changed (new branch, new folder, new doc), publish a claim.</div><span class="t">≈1 s</span></li>
+        <li><div><span class="who">Laptop → Board</span>Heartbeat marks the person active, idle or offline. Offline claims expire after 10 min.</div><span class="t">every 15 s</span></li>
+      </ol>
+    </article>
+
+    <article class="flow">
+      <header><h3>B · Someone asks</h3><span class="total">≈5–12 s · data seconds old</span></header>
+      <ol class="steps">
+        <li><div><span class="who">Voice / chat</span>② "What's Priya doing?" or "What's the team on?"</div><span class="t">0 s</span></li>
+        <li><div><span class="who">Board · Alter</span>Check the asker may ask about this team. Log the read.</div><span class="t">&lt;0.2 s</span></li>
+        <li><div><span class="who">Board</span>Cache under 3 min old? Answer straight away and skip to step 7.</div><span class="t">instant</span></li>
+        <li><div><span class="who">Board → Laptops</span>③ Router picks whose laptops to ask from claims and sends the question to each, in parallel.</div><span class="t">&lt;0.5 s</span></li>
+        <li><div><span class="who">Laptop</span>④ Local model summarizes the buffer around the question. Max 300 chars, with file and commit refs.</div><span class="t">3–8 s</span></li>
+        <li><div><span class="who">Laptop</span>The person who was asked about sees "Sam asked · sent 1 summary" in their tray.</div><span class="t">same time</span></li>
+        <li><div><span class="who">Board · Claude</span>⑦ Compose the answer. Counts come from SQL, prose from Claude. Every claim cites a source and its age.</div><span class="t">1–2 s</span></li>
+        <li><div><span class="who">Voice / chat</span>ElevenLabs speaks it, or chat shows it with source chips.</div><span class="t">streams</span></li>
+      </ol>
+    </article>
+
+    <article class="flow warnf">
+      <header><h3>C · Collision</h3><span class="total">fires within ≈1 min</span></header>
+      <ol class="steps">
+        <li><div><span class="who">Board</span>A new claim arrives (flow A, step 4).</div><span class="t">0 s</span></li>
+        <li><div><span class="who">Board</span>Detector checks for overlapping areas (path or doc), then the same task in different files (embedding match plus a quick model check).</div><span class="t">&lt;2 s</span></li>
+        <li><div><span class="who">Board → Laptop</span>⑤ Match found. Alert the <em>second</em> person only. The first keeps working.</div><span class="t">≈1 s</span></li>
+        <li><div><span class="who">Laptop · ElevenLabs</span>Spoken line plus a notification with Ping, Pair or Different thing.</div><span class="t">≈1 s</span></li>
+        <li><div><span class="who">Board</span>"Different thing" mutes that pair for an hour and teaches the detector.</div><span class="t">—</span></li>
+      </ol>
+    </article>
+
+    <article class="flow warnf">
+      <header><h3>D · Repeated dead end</h3><span class="total">one small model call</span></header>
+      <ol class="steps">
+        <li><div><span class="who">Laptop</span>Trigger: a test or build failed, a revert, or 10 min in one area with no commit.</div><span class="t">event</span></li>
+        <li><div><span class="who">Laptop</span>Local model writes a short FAIL: what was tried, what happened.</div><span class="t">3–5 s</span></li>
+        <li><div><span class="who">Laptop → Board</span>⑥ Publish it. It stays open until someone resolves it.</div><span class="t">≈1 s</span></li>
+        <li><div><span class="who">Board → Laptop</span>A teammate later claims the same area and hits the same error. Echo: "Sam tried that 20 min ago."</div><span class="t">on match</span></li>
+      </ol>
+    </article>
+
+    <article class="flow">
+      <header><h3>E · Department or company</h3><span class="total">built from cached answers</span></header>
+      <ol class="steps">
+        <li><div><span class="who">Voice / chat</span>"What's engineering blocked on?"</div><span class="t">0 s</span></li>
+        <li><div><span class="who">Board · Alter</span>Dept and company scopes get digests only, never one person's activity.</div><span class="t">&lt;0.2 s</span></li>
+        <li><div><span class="who">Board</span>Reuse team answers under 3 min old. For stale teams, run flow B.</div><span class="t">0–10 s</span></li>
+        <li><div><span class="who">Board · Rowboat</span>Pull the relevant procedure from company memory ("deploys need 2 reviews").</div><span class="t">&lt;1 s</span></li>
+        <li><div><span class="who">Board · Claude</span>Merge into one answer. Blocked counts come from SQL. Shows the age of the oldest input.</div><span class="t">1–3 s</span></li>
+      </ol>
+    </article>
+  </div>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">03 · What people see</div>
+    <h2>Sample UI, step by step</h2>
+    <p>Sample people and files. Laptop surfaces are a menu-bar tray and native notifications. The web board is for asking, and for the demo screen.</p>
+  </div>
+  <div class="screens">
+
+    <div class="screen">
+      <div class="cap"><span class="n">Step 1 · Laptop · always on</span><p>The menu-bar tray. It shows what this laptop shares and lets you pause in one click.</p></div>
+      <div class="dev menu">
+        <div class="bar"><span class="dot on"></span> Murmur is on</div>
+        <div class="body">
+          <div class="sub">You're working in</div>
+          <div><span class="scope">server/export/**</span> <span class="age">claim shared 2 min ago</span></div>
+          <hr class="s">
+          <div class="mi"><span>Share my work area</span><span class="check">On</span></div>
+          <div class="mi"><span>Answer when teammates ask</span><span class="check">On</span></div>
+          <div class="mi"><span>Raw activity kept on this Mac</span><span class="age">30 min</span></div>
+          <hr class="s">
+          <div class="mi"><span>Sam asked about you · 14:14</span><span class="age">sent 1</span></div>
+          <div class="btns"><button class="btn" type="button">See what was sent</button><button class="btn" type="button">Pause 30 min</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="cap"><span class="n">Step 2 · Web · team board</span><p>Live claims and state from heartbeats. No model is involved, so this view costs nothing.</p></div>
+      <div class="dev">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span>team-murmur · Engineering · 4 online</div>
+        <div class="body">
+          <div class="row"><span class="av">PK</span><div class="grow"><b>Priya</b> <span class="sub">active</span><br><span class="scope">server/export/**</span></div><span class="age">12 min · 4 s</span></div>
+          <div class="row"><span class="av">SM</span><div class="grow"><b>Sam</b> <span class="sub">active</span><br><span class="scope">web/settings/**</span></div><span class="age">31 min · 9 s</span></div>
+          <div class="row"><span class="av">JO</span><div class="grow"><b>Jordan</b> <span class="sub">idle</span><br><span class="scope">doc: pricing-page draft</span></div><span class="age">8 min · 2 min</span></div>
+          <div class="row"><span class="av">AL</span><div class="grow"><b>Alex</b> <span class="sub">offline</span><br><span class="scope">voice/prompts/**</span></div><span class="age">since 13:52</span></div>
+          <div class="feed">
+            <div><span class="age">14:12</span><span>Priya claimed <span class="mono">server/export/**</span></span></div>
+            <div><span class="age">14:09</span><span><span class="tag fail">FAIL</span> Sam: bumping Node didn't fix the turbo cache error</span></div>
+            <div><span class="age">14:02</span><span><span class="tag work">DONE</span> Jordan: pricing copy v2 sent for review</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="cap"><span class="n">Step 3 · Voice or chat · asking</span><p>The voice agent covers the wait out loud. The answer names files and says how old it is.</p></div>
+      <div class="dev">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span>Ask Murmur</div>
+        <div class="body">
+          <div class="bubble me">What's Priya doing right now?</div>
+          <div class="status"><span class="spin" aria-hidden="true"></span>Asking Priya's laptop · 4.8 s</div>
+          <div class="bubble bot">
+            <div>Priya is building the CSV export endpoint in <span class="mono">server/export/csv.ts</span>. She added a streaming writer and is fixing a failing test in <span class="mono">export.spec.ts</span>. Nothing committed yet.</div>
+            <div class="srcs"><span class="src">Priya's laptop · <b>5 s ago</b></span><span class="src">claim export/** · 12 min</span><span class="src">commit 9f2c1e · 31 min</span></div>
+            <div class="voice"><span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>Spoken by ElevenLabs</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="cap"><span class="n">Step 4 · Sam's laptop · collision</span><p>Spoken and shown on the second person's laptop only. One tap to act.</p></div>
+      <div class="dev notif">
+        <div class="body">
+          <h4>Heads up: Priya's already on this</h4>
+          <div class="quote">"Priya has been in the export module for 12 minutes on the same CSV endpoint. Want me to ping her?"</div>
+          <div class="srcs"><span class="src">your claim <b>server/export/**</b></span><span class="src">hers since 14:12</span></div>
+          <div class="btns"><button class="btn pri" type="button">Ping Priya</button><button class="btn" type="button">Pair</button><button class="btn" type="button">Different thing</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="cap"><span class="n">Step 5 · Jordan's laptop · dead end</span><p>Jordan hits the same error Sam logged. The FAIL entry comes back before Jordan loses 20 minutes.</p></div>
+      <div class="dev notif bad">
+        <div class="body">
+          <h4>Sam hit this 20 minutes ago</h4>
+          <div>Bumping Node didn't fix the turbo cache error. Sam's last note: clearing <span class="mono">.turbo/</span> did.</div>
+          <div class="srcs"><span class="src">FAIL · Sam · 14:09</span><span class="src">matched your build error</span></div>
+          <div class="btns"><button class="btn pri" type="button">Try the fix</button><button class="btn" type="button">Ask Sam</button><button class="btn" type="button">Not the same</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="cap"><span class="n">Step 6 · Priya's laptop · who asked</span><p>Every read about you is visible, backed by Alter's audit log. This is what makes it a teammate and not a tracker.</p></div>
+      <div class="dev">
+        <div class="bar"><span class="dot on"></span> Sharing log · today</div>
+        <div class="body">
+          <div class="row"><span class="av">SM</span><div class="grow"><b>Sam</b> asked what you're doing<br><span class="sub">14:14 · via voice</span></div></div>
+          <div><span class="sub">Sent:</span> "Building CSV export in server/export/csv.ts, fixing export.spec.ts."</div>
+          <div class="sub">Not sent: window titles, file contents, browser tabs, anything outside work apps.</div>
+          <div class="btns"><button class="btn" type="button">Pause sharing</button><button class="btn" type="button">Delete this entry</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="cap"><span class="n">Step 7 · Web · department view</span><p>Rollups from cached team answers. Simulated teams are labeled in the demo.</p></div>
+      <div class="dev">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span>Acme › Engineering</div>
+        <div class="body">
+          <div class="tabs"><span>Team</span><span class="sel">Department</span><span>Company</span></div>
+          <div class="trow"><span><b>team-murmur</b></span><span class="tag work">live</span><span class="age">4 s</span></div>
+          <div class="trow"><span><b>team-payments</b> · 1 blocked</span><span class="tag sim">sim</span><span class="age">1 min</span></div>
+          <div class="trow"><span><b>team-infra</b> · 2 blocked</span><span class="tag sim">sim</span><span class="age">2 min</span></div>
+          <div class="bubble bot">
+            <div><b>Engineering is blocked on 3 things.</b> Payments is waiting on a staging deploy, which the handbook says needs 2 reviews and has 1. Infra has two issues waiting on the same flaky CI runner.</div>
+            <div class="srcs"><span class="src">3 team answers · oldest <b>2 min 10 s</b></span><span class="src">Handbook §4 · Rowboat</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">04 · Partners</div>
+    <h2>Each partner tool and its job</h2>
+  </div>
+  <div class="tbl"><table>
+    <thead><tr><th>Tool</th><th>Its job in Murmur</th><th>Where you see it</th></tr></thead>
+    <tbody>
+      <tr><td>ElevenLabs</td><td>Voice agent for asking hands-free. Speaks collision and dead-end alerts on the laptop.</td><td>Steps 3, 4</td></tr>
+      <tr><td>Maritime</td><td>Hosts the board, router, query agent and rollups at a live URL, so judges can ask from their own phone.</td><td>Whole cloud column</td></tr>
+      <tr><td>Alter</td><td>Each scout gets its own identity with scoped, short-lived permissions. The audit log is the "who asked about you" view.</td><td>Steps 6, 7</td></tr>
+      <tr><td>Rowboat</td><td>Long-term company memory: procedures, past DONE work, decisions. The board holds the live layer, Rowboat the durable one.</td><td>Step 7</td></tr>
+      <tr><td>TraceRoot</td><td>Traces every hop. A source chip opens the trace of the laptop summary it came from.</td><td>Source chips</td></tr>
+      <tr><td>assistant-ui</td><td>The chat panel: streaming answers and tool-call status ("Asking Priya's laptop").</td><td>Step 3</td></tr>
+      <tr><td>Expected Parrot</td><td>Simulated survey of managers and engineers: would they install it, and where's the line? That gives us a real number for the pitch.</td><td>Pitch slide / Q&amp;A</td></tr>
+      <tr><td>Wasp</td><td>Optional: board server, database and web UI in one app, if someone has used it before.</td><td>Steps 2, 7</td></tr>
+      <tr><td>Codevisor</td><td>We build with it. Its CEO is judging.</td><td>Submission form</td></tr>
+      <tr><td>Fiber AI · Ploid</td><td>No real job here. Leave them out.</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="head">
+    <div class="eyebrow">05 · Before SPEC.md</div>
+    <h2>Decisions to approve or change</h2>
+  </div>
+  <ol class="decide">
+    <li><div><b>Pull answers, push only claims and failures</b><span>The local model runs only when asked or triggered. Claims and heartbeats run all the time and use no model.</span></div></li>
+    <li><div><b>Inputs: window title, git, file saves</b><span>No screenshots, no Slack, no email. Enough to prove liveness in the demo.</span></div></li>
+    <li><div><b>Collision alerts go to the second person only</b><span>The first person is never interrupted. Ping, Pair or Different thing.</span></div></li>
+    <li><div><b>Everyone sees who asked about them</b><span>Alter audit log in the tray, plus pause and delete. Dept and company get digests only.</span></div></li>
+    <li><div><b>One real team, simulated other teams</b><span>A seed script, labeled "sim" on screen. Expected Parrot is used for the validation survey, not the fake data.</span></div></li>
+    <li><div><b>Web stack: Wasp or Vite + React</b><span>Wasp only if someone has shipped with it. Otherwise Vite, with assistant-ui either way.</span></div></li>
+  </ol>
+</section>
+
+</div>

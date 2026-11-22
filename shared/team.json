@@ -1,0 +1,12 @@
+{
+  "company": "acme",
+  "dept": "engineering",
+  "team": "team-murmur",
+  "members": [
+    { "user": "priya", "name": "Priya", "role": "P1 scout" },
+    { "user": "sam", "name": "Sam", "role": "P2 server" },
+    { "user": "jordan", "name": "Jordan", "role": "P3 web" },
+    { "user": "alex", "name": "Alex", "role": "P4 lead" }
+  ],
+  "_note": "P4: replace with our real first names"
+}

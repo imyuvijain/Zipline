@@ -1,0 +1,20 @@
+{
+  "team": "team-murmur",
+  "members": [
+    { "user": "priya", "name": "Priya", "area": "repo:team23-hack/server/export", "since": "2026-11-22T14:12:00-05:00", "state": "active", "lastSeen": "2026-11-22T14:24:56-05:00" },
+    { "user": "sam", "name": "Sam", "area": "repo:team23-hack/web/settings", "since": "2026-11-22T13:53:00-05:00", "state": "active", "lastSeen": "2026-11-22T14:24:51-05:00" },
+    { "user": "jordan", "name": "Jordan", "area": "doc:Pricing page draft", "since": "2026-11-22T14:16:00-05:00", "state": "idle", "lastSeen": "2026-11-22T14:23:00-05:00" },
+    { "user": "alex", "name": "Alex", "area": "repo:team23-hack/demo", "since": "2026-11-22T13:52:00-05:00", "state": "offline", "lastSeen": "2026-11-22T13:52:00-05:00" }
+  ],
+  "feed": [
+    { "at": "2026-11-22T14:12:00-05:00", "kind": "claim", "text": "Priya is in server/export" },
+    { "at": "2026-11-22T14:09:00-05:00", "kind": "fail", "text": "Sam: bumping Node didn't fix the turbo cache error" },
+    { "at": "2026-11-22T14:02:00-05:00", "kind": "done", "text": "Jordan: pricing copy v2 sent for review" }
+  ],
+  "sampleAsk": {
+    "answer": "Priya is building the CSV export endpoint in server/export/csv.ts. She added a streaming writer and is fixing a failing test in export.spec.ts. Nothing committed yet.",
+    "sources": [ { "label": "Priya's laptop", "ageSec": 5 }, { "label": "claim server/export", "ageSec": 720 } ],
+    "asOfSec": 5,
+    "cached": false
+  }
+}
