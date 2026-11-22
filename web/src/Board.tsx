@@ -92,7 +92,7 @@ function MemberCard({ m, now, i, clash, focus, open, onToggle, feed, onFocus }: 
             </span>
             <span key={areaBump} className={`scope ${areaBump ? "flash" : ""}`} title={m.area}>{areaLabel(m.area)}</span>
           </span>
-          <span className="age big">{m.state === "offline" ? `${Math.floor(seen / 60)}m` : fmtAge(seen)}</span>
+          <span className="age big">{!Number.isFinite(seen) ? "—" : m.state === "offline" ? `${Math.floor(seen / 60)}m` : fmtAge(seen)}</span>
         </button>
         {open && <MemberDetail m={m} feed={feed} onFocus={onFocus} />}
       </div>
