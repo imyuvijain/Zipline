@@ -12,3 +12,10 @@ curl -s -XPOST $B/brief -H "$J" -d '{"for":"yuvi","kind":"manager_digest"}'
 curl -s -o brief.mp3 -w '%{http_code}\n' $B/brief/<id>/audio
 ```
 Env: `ELEVENLABS_API_KEY` (required for real voice), `ELEVENLABS_VOICE_ID` (optional).
+
+### Manager AI review (talk-back)
+```sh
+ID=$(curl -s -XPOST $B/brief -H "$J" -d '{"for":"yuvi","kind":"manager_digest"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+curl -s $B/brief/$ID/agent-session   # {signedUrl:"wss://...", agentId, script}
+```
+Needs `ELEVENLABS_AGENT_ID` (agent "Zipline Manager Review", client tool `ask_zipline`). Optional `LLM_URL` (+ `LLM_MODEL`) writes the review with the local model; otherwise the template. Web: run with `VITE_MURMUR_USER=yuvi` to get the manager-only "Team review" button.

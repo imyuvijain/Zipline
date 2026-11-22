@@ -27,7 +27,7 @@ if (LLM_URL) {
 export const aiBackend = LLM_URL ? `${LLM_API}:${LLM_MODEL}` : claude ? CLAUDE_MODEL : "none";
 
 /** One system + user turn. `json` asks the model for a JSON object. */
-async function complete(system: string, user: string, opts: { maxTokens: number; json?: boolean }): Promise<string | null> {
+export async function complete(system: string, user: string, opts: { maxTokens: number; json?: boolean }): Promise<string | null> {
   if (LLM_URL) return completeLocal(system, user, opts);
   if (!claude) return null;
   try {

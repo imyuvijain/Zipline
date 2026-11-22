@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AskResponse, BriefKind, BriefRequest, BriefResponse, UserId } from "../../../shared/types.ts";
 import { ME } from "../api.ts";
 import { onServerEvent } from "../serverEvents.ts";
+import { AgentCall, prepareAgent, type AgentSession } from "./AgentCall.tsx";
 import team from "../../../shared/team.json";
 
 const IS_MANAGER = ME === (team as { manager?: string }).manager;
@@ -57,13 +58,14 @@ export function IncomingCall({ trigger = false }: { trigger?: boolean }) {
   const [ring, setRing] = useState<Ringing | null>(null);
   const [brief, setBrief] = useState<BriefResponse | null>(null);
   const [status, setStatus] = useState<"ringing" | "live" | "ended">("ringing");
-  const [mode, setMode] = useState<"elevenlabs" | "browser" | null>(null);
+  const [mode, setMode] = useState<"agent" | "elevenlabs" | "browser" | null>(null);
+  const [agent, setAgent] = useState<AgentSession | null>(null);
   const [q, setQ] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const open = (r: Ringing) => { setRing(r); setBrief(r.brief ?? null); setStatus("ringing"); setAnswer(null); setMode(null); };
+    const open = (r: Ringing) => { setRing(r); setBrief(r.brief ?? null); setStatus("ringing"); setAnswer(null); setMode(null); setAgent(null); };
     openers.add(open);
     const off = onServerEvent("incoming_call", (e) => open({ briefId: e.briefId, title: e.title, from: e.from }));
     return () => { openers.delete(open); off(); };
@@ -76,6 +78,24 @@ export function IncomingCall({ trigger = false }: { trigger?: boolean }) {
     if ("speechSynthesis" in window) speechSynthesis.cancel();
     setRing(null);
     setBrief(null);
+    setAgent(null);
+  };
+
+  const playTts = async (b: BriefResponse) => {
+    const a = new Audio();
+    audio.current = a;
+    a.onended = () => setStatus("ended");
+    try {
+      // 503 = no ElevenLabs key on the server: fall back to browser speech.
+      const probe = await fetch(BASE + b.audioUrl);
+      if (!probe.ok) throw new Error(String(probe.status));
+      a.src = URL.createObjectURL(await probe.blob());
+      await a.play();
+      setMode("elevenlabs");
+    } catch {
+      setMode("browser");
+      speak(b.script, () => setStatus("ended"));
+    }
   };
 
   const answerCall = async () => {
@@ -86,20 +106,16 @@ export function IncomingCall({ trigger = false }: { trigger?: boolean }) {
       try { b = (await (await fetch(`${BASE}/brief/${ring.briefId}`)).json()) as BriefResponse; setBrief(b); } catch { return; }
     }
     if (!b) return;
-    const a = new Audio();
-    audio.current = a;
-    a.onended = () => setStatus("ended");
-    try {
-      // 503 = no ElevenLabs key on the server: fall back to browser speech.
-      const probe = await fetch(BASE + b.audioUrl, { method: "GET" });
-      if (!probe.ok) throw new Error(String(probe.status));
-      a.src = URL.createObjectURL(await probe.blob());
-      await a.play();
-      setMode("elevenlabs");
-    } catch {
-      setMode("browser");
-      speak(b.script, () => setStatus("ended"));
-    }
+    // Manager review: talk-back agent when configured and the mic is allowed; otherwise the TTS mp3.
+    const session = b.kind === "manager_digest" ? await prepareAgent(b.id) : null;
+    if (session) { setAgent(session); setMode("agent"); return; }
+    await playTts(b);
+  };
+
+  const agentFailed = (why: string) => {
+    console.warn("[call] agent session failed, playing TTS:", why);
+    setAgent(null);
+    if (brief) void playTts(brief);
   };
 
   const ask = async () => {
@@ -117,19 +133,21 @@ export function IncomingCall({ trigger = false }: { trigger?: boolean }) {
   if (!ring)
     return trigger ? (
       <div style={S.trigger}>
-        <CatchMeUp kind={IS_MANAGER ? "manager_digest" : "catchup"} label={IS_MANAGER ? "Team digest call" : "Catch me up"} />
+        {IS_MANAGER ? <TeamReview /> : <CatchMeUp />}
       </div>
     ) : null;
   return (
     <div style={S.backdrop} role="dialog" aria-label="Incoming call">
       <div style={S.card}>
         <div style={S.title}>{ring.title}</div>
-        <div style={S.sub}>{status === "ringing" ? "Incoming call…" : status === "live" ? `On call${mode ? ` (${mode === "elevenlabs" ? "ElevenLabs" : "browser voice"})` : ""}` : "Call ended"}</div>
+        <div style={S.sub}>{status === "ringing" ? "Incoming call…" : status === "live" ? `On call${mode ? ` (${mode === "agent" ? "live agent" : mode === "elevenlabs" ? "ElevenLabs" : "browser voice"})` : ""}` : "Call ended"}</div>
         {status === "ringing" ? (
           <div style={S.row}>
             <button style={S.btn} onClick={answerCall}>Answer</button>
             <button style={S.btn} onClick={hangUp}>Decline</button>
           </div>
+        ) : mode === "agent" && agent ? (
+          <AgentCall session={agent} onFail={agentFailed} onHangUp={hangUp} style={S} />
         ) : (
           <>
             <p style={S.script}>{brief?.script ?? "Loading…"}</p>
@@ -156,6 +174,11 @@ export function CatchMeUp({ kind = "catchup", label = "Catch me up" }: { kind?: 
       {busy ? "Calling…" : label}
     </button>
   );
+}
+
+/** Manager-only: rings a manager_digest call (AI team review with talk-back). Renders nothing for non-managers. */
+export function TeamReview() {
+  return IS_MANAGER ? <CatchMeUp kind="manager_digest" label="Team review" /> : null;
 }
 
 const S: Record<string, React.CSSProperties> = {

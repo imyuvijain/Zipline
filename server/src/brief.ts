@@ -13,12 +13,16 @@ import type { Assignment, BriefKind, BriefRequest, BriefResponse, ServerToScout,
 import * as db from "./db.ts";
 import * as hub from "./hub.ts";
 import { displayArea } from "./areas.ts";
+import { complete } from "./claude.ts";
 
 const EL_KEY = process.env.ELEVENLABS_API_KEY;
 const EL_VOICE = process.env.ELEVENLABS_VOICE_ID || "JBFqnCBsd6RMkjVDRZzb"; // public premade voice ("George")
 const EL_MODEL = "eleven_flash_v2_5";
+const EL_AGENT = process.env.ELEVENLABS_AGENT_ID;
+const OVERDUE_MIN = Number(process.env.OVERDUE_MIN ?? 20);
 
-console.log("[brief] script: template over DB data");
+console.log(`[brief] script: ${process.env.LLM_URL ? "manager review via LLM_URL (template fallback)" : "template over DB data"}`);
+console.log(`[brief] talk-back agent: ${EL_AGENT && EL_KEY ? EL_AGENT : "none (manager review plays TTS only)"}`);
 console.log(`[brief] voice: ${EL_KEY ? `ElevenLabs ${EL_MODEL}, voice ${EL_VOICE}` : "MOCK (no ELEVENLABS_API_KEY: /audio returns 503, web uses speechSynthesis)"}`);
 
 const teamJson = JSON.parse(readFileSync(new URL("../../shared/team.json", import.meta.url), "utf8")) as { manager?: string };
@@ -120,9 +124,89 @@ function templateScript(kind: BriefKind, listener: string, ctx: Ctx, assignment?
   return words.slice(0, 150).join(" ");
 }
 
+
+// ---------- manager review (manager_digest) ----------
+// Per teammate: what they're on, blockers/fails, collisions, overdue assignments; then one suggested action.
+interface Review { script: string; notes: string; sources: Source[] }
+
+function managerReview(forUser: string, sinceMin: number): Review {
+  const me = db.ensureUser(forUser);
+  const cutoff = cutoffIso(sinceMin);
+  const sources: Source[] = [];
+  const notes: string[] = [];
+  const said: string[] = [];
+  const fails = db.recentFails(sinceMin);
+  const overlapsNow = db.recentOverlaps(me.team).filter((o) => o.at >= cutoff && o.verdict !== "different");
+  const open = openAssignments(me.team);
+  let action: string | null = null;
+
+  for (const u of db.teamUsers(me.team).filter((x) => x.user !== forUser)) {
+    const claim = db.latestClaim(u.user);
+    const sum = db.latestSummary(u.user);
+    const area = claim ? displayArea(claim.area) : undefined;
+    const parts: string[] = [];
+    if (sum) {
+      parts.push(firstSentence(sum.text).replace(/[.!?]$/, ""));
+      sources.push({ label: `${u.name}'s laptop`, ageSec: db.ageSec(sum.at) });
+    } else if (claim && area) {
+      parts.push(`${u.name} is on ${area}${claim.files?.[0] ? `, in ${claim.files[0]}` : ""}`);
+      sources.push({ label: `claim ${area}`, ageSec: db.ageSec(claim.since) });
+    } else continue;
+    const f = fails.find((x) => x.user === u.user);
+    if (f) {
+      parts.push(`blocked: ${f.text.replace(/[.!?]$/, "")}`);
+      sources.push({ label: `fail ${u.name}`, ageSec: db.ageSec(f.at) });
+      action ??= `unblock ${u.name} on ${displayArea(f.area)}`;
+    }
+    const o = overlapsNow.find((x) => x.users[1] === u.user);
+    if (o) {
+      const other = nameOf(o.users[0]);
+      parts.push(`colliding with ${other} in ${displayArea(o.area)}`);
+      sources.push({ label: `overlap ${displayArea(o.area)}`, ageSec: db.ageSec(o.at) });
+      action ??= `get ${u.name} and ${other} to split ${displayArea(o.area)}`;
+    }
+    const late = open.find((a) => a.to === u.user && db.ageSec(a.at) > OVERDUE_MIN * 60);
+    if (late) {
+      parts.push(`your ask "${late.text}" is still open after ${Math.round(db.ageSec(late.at) / 60)} minutes`);
+      sources.push({ label: `assignment ${u.name}`, ageSec: db.ageSec(late.at) });
+      action ??= `check in with ${u.name} on ${late.text}`;
+    }
+    const line = parts.join("; ") + ".";
+    said.push(line.charAt(0).toUpperCase() + line.slice(1));
+    notes.push(`${u.name}${area ? ` (${area})` : ""}: ${sum ? sum.text : parts[0]}${f ? ` | FAIL: ${f.text}` : ""}${o ? ` | OVERLAP with ${nameOf(o.users[0])}: ${o.reason}` : ""}${late ? ` | OVERDUE ASSIGNMENT (${Math.round(db.ageSec(late.at) / 60)} min): ${late.text}` : ""}`);
+  }
+  for (const a of open.filter((a) => db.ageSec(a.at) <= OVERDUE_MIN * 60)) notes.push(`Open assignment for ${nameOf(a.to)}: ${a.text}`);
+
+  const words = [
+    `Hi ${me.name}, here's your team review.`,
+    ...(said.length ? said : ["No updates from the team yet."]),
+    action ? `My suggestion: ${action}.` : "Nothing needs you right now.",
+  ].join(" ").split(/\s+/);
+  return { script: words.slice(0, 150).join(" "), notes: notes.join("\n"), sources };
+}
+
+const REVIEW_SYSTEM = `You write the spoken script for a short voice call in which Zipline reviews a software team for their manager.
+At most 150 words, plain spoken English, no markdown, no lists, no emojis. Address the manager as "you".
+Go teammate by teammate: what they are on (name real files or areas), any blocker or failure, any collision with a teammate, any overdue assignment.
+Finish with exactly one suggested action for the manager. Never invent anything that is not in the notes.`;
+
+/** Local LLM (LLM_URL, via claude.ts's hosted-model path) first; template on unset/failure. Never Anthropic. */
+async function managerScript(forUser: string, sinceMin: number): Promise<{ script: string; sources: Source[] }> {
+  const r = managerReview(forUser, sinceMin);
+  if (process.env.LLM_URL && r.notes) {
+    const text = await complete(REVIEW_SYSTEM, `Manager: ${nameOf(forUser)}\nTeam notes:\n${r.notes}`, { maxTokens: 350 });
+    if (text) return { script: text.replace(/[*#_`]/g, "").split(/\s+/).slice(0, 160).join(" "), sources: r.sources };
+  }
+  return { script: r.script, sources: r.sources };
+}
+
 export async function createBrief(req: BriefRequest): Promise<BriefResponse> {
   const kind: BriefKind = (["assignment", "manager_digest", "catchup"] as const).includes(req.kind) ? req.kind : "catchup";
   const assignment = req.assignmentId ? getAssignment(req.assignmentId) : undefined;
+  if (kind === "manager_digest") {
+    const m = await managerScript(req.for, req.sinceMin ?? 30);
+    return saveBrief(req.for, kind, m.script, m.sources.slice(0, 8));
+  }
   const ctx = gather(req.for, kind, req.sinceMin ?? 30);
   if (assignment) ctx.sources.unshift({ label: `assignment from ${nameOf(assignment.from)}`, ageSec: db.ageSec(assignment.at) });
   const script = templateScript(kind, nameOf(req.for), ctx, assignment);
@@ -176,6 +260,23 @@ export default async function briefRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/brief/:id", async (req, reply) => {
     const r = getBrief(req.params.id);
     return r ? toResponse(r) : reply.code(404).send(bad("no such brief"));
+  });
+
+  // Talk-back: a signed ElevenLabs Agent URL (the key stays here) plus the script for overrides.agent.firstMessage.
+  app.get<{ Params: { id: string } }>("/brief/:id/agent-session", async (req, reply) => {
+    const r = getBrief(req.params.id);
+    if (!r) return reply.code(404).send(bad("no such brief"));
+    if (!EL_KEY || !EL_AGENT) return reply.code(503).send(bad("ELEVENLABS_API_KEY / ELEVENLABS_AGENT_ID not set"));
+    try {
+      const res = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(EL_AGENT)}`, {
+        headers: { "xi-api-key": EL_KEY }, signal: AbortSignal.timeout(8_000),
+      });
+      if (!res.ok) return reply.code(502).send(bad(`ElevenLabs HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`));
+      const { signed_url } = (await res.json()) as { signed_url: string };
+      return { signedUrl: signed_url, agentId: EL_AGENT, script: r.script, kind: r.kind, for: r.for };
+    } catch (err) {
+      return reply.code(502).send(bad(`signed URL failed: ${(err as Error).message}`));
+    }
   });
 
   app.get<{ Params: { id: string } }>("/brief/:id/audio", async (req, reply) => {
