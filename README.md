@@ -189,5 +189,6 @@ More curl recipes (assign → ring, briefs, audio, the agent session) are in [`d
 ## Team 23
 
 - **Maxim**: scout (laptop agent), context capture, local model
+- **Anshi**: server: Fastify + SQLite + WebSocket hub, two-stage overlap check, Maritime deploy
 - **Richard**: web board
 - **Yuvi**: lead, manager view, voice catch-up calls, demo
