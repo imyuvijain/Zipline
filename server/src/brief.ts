@@ -1,4 +1,4 @@
-// Voice catch-up calls (SPEC §2b). Registered by index.ts when this file exists.
+// Voice catch-up calls. Registered by index.ts when this file exists.
 //   POST /assign            manager assigns work -> assignment brief -> incoming_call to `to`
 //   POST /brief             BriefRequest -> BriefResponse (script + spoken + sources)
 //   GET  /brief/:id         the stored BriefResponse (the web needs the script after an incoming_call)

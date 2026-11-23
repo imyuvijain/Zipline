@@ -6,7 +6,7 @@ import { onServerEvent } from "./serverEvents.ts";
 
 type Ping = Extract<ServerToScout, { type: "overlap_ping" }>;
 
-/** "Same task?" cards for overlap_ping (SPEC §2c). Answers go to POST /overlap/:id/answer. */
+/** "Same task?" cards for overlap_ping. Answers go to POST /overlap/:id/answer. */
 export function SameTaskCards({ nameOf }: { nameOf: (user: string) => string }) {
   const [pings, setPings] = useState<Ping[]>([]);
   const [busy, setBusy] = useState<string | null>(null);

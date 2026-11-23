@@ -2,7 +2,7 @@ import type { ServerToScout } from "../../shared/types.ts";
 import { ME } from "./api.ts";
 
 /**
- * The web app's WebSocket to the server (SPEC §3: "scout + web connect").
+ * The web app's WebSocket to the server.
  * A tiny event bus so any component can listen, e.g. Yuvi's <IncomingCall/>:
  *   useServerEvent("incoming_call", (e) => ...)
  */

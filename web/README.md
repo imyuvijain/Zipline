@@ -1,4 +1,4 @@
-# /web: see SPEC.md §5 (P3, Richard)
+# /web
 
 ```bash
 cd web && npm install && npm run dev   # http://localhost:5173

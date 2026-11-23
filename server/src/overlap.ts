@@ -1,4 +1,4 @@
-// Two-stage overlap check (SPEC §2c).
+// Two-stage overlap check.
 // Stage 1 runs on every /claim (paths + files, no AI). Candidates go to stage 2 in the
 // background: ask both laptops for a one-line intent, then one Claude call compares them.
 import { randomUUID } from "node:crypto";

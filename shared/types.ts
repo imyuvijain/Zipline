@@ -60,7 +60,7 @@ export interface Board {
   feed: FeedItem[];
 }
 
-// Overlap check (SPEC §2c)
+// Overlap check
 export type OverlapVerdict = "same" | "related" | "different" | "unsure";
 
 export interface Overlap {
@@ -79,7 +79,7 @@ export interface OverlapAnswer { user: UserId; same: boolean; }
 // Nudge a teammate from the web app (POST /ping). Delivered to their laptop + open web tabs.
 export interface PingRequest { from: UserId; to: UserId; text?: string }
 
-// Assignments + voice catch-up calls (SPEC §2b)
+// Assignments + voice catch-up calls
 export interface Assignment {
   id: string;
   from: UserId;   // manager

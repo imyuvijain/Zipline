@@ -8,7 +8,7 @@ function parse(area: string) {
 }
 
 /**
- * Overlap stage 1 path rule (SPEC §2c): same repo and a shared path prefix at least 2 folders
+ * Overlap stage 1 path rule: same repo and a shared path prefix at least 2 folders
  * deep below the repo ("server/export" counts; the repo root or "src/" alone don't).
  * Non-repo areas (docs) overlap only on an exact, case-insensitive match.
  */

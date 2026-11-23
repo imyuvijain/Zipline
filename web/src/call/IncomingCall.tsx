@@ -1,4 +1,4 @@
-// Voice catch-up calls (SPEC §2b). Minimal, self-contained styling: Richard restyles.
+// Voice catch-up calls. Minimal, self-contained styling.
 // Mount once: <IncomingCall/>. It rings on the `incoming_call` WS push, or when <CatchMeUp/> fires.
 import { useEffect, useRef, useState } from "react";
 import type { AskResponse, BriefKind, BriefRequest, BriefResponse, UserId } from "../../../shared/types.ts";

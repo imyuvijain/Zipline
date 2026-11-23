@@ -25,7 +25,7 @@ export function switchUser(u: UserId) {
   location.reload();
 }
 export const TEAM = "team-murmur";
-/** The laptops' local Ollama model that writes every answer (SPEC §4). */
+/** The laptops' local Ollama model that writes every answer. */
 export const LOCAL_MODEL = (import.meta.env.VITE_LOCAL_MODEL as string | undefined) || "qwen2.5:3b";
 export const SIM_TEAMS = ["team-payments", "team-infra"];
 

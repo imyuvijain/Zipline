@@ -125,7 +125,6 @@ flowchart LR
 | [`web/`](web) | React 18 + Vite board, `@elevenlabs/react` for the talk-back call |
 | [`shared/`](shared) | Contracts (`types.ts`), team roster (`team.json`), offline fixtures |
 | [`demo/`](demo) | Seed script and curl recipes for the demo |
-| [`SPEC.md`](SPEC.md) | The hackathon spec: architecture, contracts, roles, timeline |
 
 ---
 

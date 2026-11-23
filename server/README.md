@@ -26,7 +26,7 @@ npm run smoke        # with the server running: fake scouts + every endpoint
 | WS | `/ws?user=` | Scout. Gets `ask` (incl. `purpose:"intent"`), `alert`, `overlap_ping`, `asked_about_you`, `incoming_call`; sends `summary`. |
 | WS | `/ws?user=&client=web` | Web app. Gets every push except `ask`. A user can have a scout and several web tabs at once. |
 
-## Overlap check (SPEC §2c)
+## Overlap check
 - **Stage 1** (every `/claim`, no AI): another non-offline person's area shares the repo + 2 folders (`server/export`; `src/` alone doesn't), or the two claims share a file. A shared file, or the same branch, makes it `strong`.
 - **Stage 2** (background): both laptops get `ask` with `purpose:"intent"` (8s), then one Claude Haiku call → `same | related | different` + confidence.
   - `same` ≥ 0.7 → `alert` to the newer claimer, FYI `alert` to the other. Feed `alert`.

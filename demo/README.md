@@ -1,4 +1,4 @@
-# /demo — see SPEC.md §5 for owner and tasks
+# /demo
 
 ## Voice catch-up calls (curl)
 
