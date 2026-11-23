@@ -29,7 +29,7 @@ Status updates go stale quickly. Standups are a day old, Slack statuses are neve
 
 The web app has a demo user switcher (top-right avatar → *Switch user*), so one browser can show every role. The screenshots below use the local demo seed (see [Run it locally](#run-it-locally)).
 
-### Manager view (Yuvi)
+### Manager view
 
 The manager sees the live team on the right and the activity feed below it. The left column holds the selected person, an **Assign a task** form and today's tasks.
 
@@ -49,7 +49,7 @@ The **Engineering** tab stacks every team's board. Payments and Infra are simula
 
 ![Engineering department roll-up](docs/screenshots/03-dept-rollup.png)
 
-### Engineer view (Richard)
+### Engineer view
 
 Engineers get **Catch me up** instead of Team review: a short call about what changed on the team since they last looked.
 
@@ -71,7 +71,7 @@ When he answers, the brief is spoken in an ElevenLabs voice. It covers the task 
 
 ![Call answered: spoken brief with sources](docs/screenshots/09-call-answered.png)
 
-### Pings (Maxim)
+### Pings
 
 A ping is a lightweight nudge with a note. It lands at the top of the recipient's board and the sender's card lights up.
 
@@ -188,7 +188,7 @@ More curl recipes (assign → ring, briefs, audio, the agent session) are in [`d
 
 ## Team 23
 
-- **Maxim**: scout (laptop agent), context capture, local model
-- **Anshi**: server: Fastify + SQLite + WebSocket hub, two-stage overlap check, Maritime deploy
-- **Richard**: web board
-- **Yuvi**: lead, manager view, voice catch-up calls, demo
+- Maxim
+- Anshi
+- Richard
+- Yuvi

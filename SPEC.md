@@ -18,7 +18,7 @@ Challenge: **"an AI coworker they'd actually use."**
 | **Maxim** | `/scout`: the laptop agent. Collectors, SQLite buffer, `/claim` + heartbeat, WebSocket, Ollama summaries, notifications, plus the user-facing sharing page on `localhost:4545` | Real claims from your laptop reaching the server |
 | **Anshi** | `/server`: Fastify + SQLite + WebSocket hub, `/claim` `/heartbeat` `/board` `/ask`, the 2-stage overlap check. **Deploy to Maritime early and post the URL in Slack.** | Live URL serving `/board` |
 | **Richard** | `/web`: Vite + React + assistant-ui. Team board with live ages, chat → `/ask`, activity feed, dept tab, the "same task?" card | Board rendering `shared/fixtures.json` ✅ (pushed 12:36) |
-| **Yuvi** | Lead. **Voice catch-up calls** (ElevenLabs): `/assign`, `/brief`, the incoming-call UI. Seed data, demo script, video, **submits the form at 14:50** | Everyone unblocked |
+| **Yuvi** | **Voice catch-up calls** (ElevenLabs): `/assign`, `/brief`, the incoming-call UI. Seed data, demo script, video, **submits the form at 14:50** | Everyone unblocked |
 
 **Contracts:** `shared/types.ts`. **Don't change them without posting in Slack.** Build against `shared/fixtures.json` until the server is live. The 12:45 changes only *add* fields and message types, so existing code keeps compiling.
 
@@ -187,7 +187,7 @@ Yuvi writes the brief routes in `server/src/brief.ts` and registers them with on
 | 14:00 | Activity feed (claims, alerts, overlaps, asks, assigns, briefs). Dept tab with sim teams labeled `sim`. **"Same task?" card** for `overlap_ping` (Yes, let's sync / No, different → `/overlap/:id/answer`). Leave a slot for Yuvi's `<IncomingCall/>` overlay. |
 | 14:20 | Demo polish: big font, dark mode, one-screen layout for the demo table. |
 
-### P4 · YUVI: Lead · voice catch-up calls · demo (`/demo`, `server/src/brief.ts`, `web/src/call/`)
+### P4 · YUVI: voice catch-up calls · demo (`/demo`, `server/src/brief.ts`, `web/src/call/`)
 | By | Do |
 |---|---|
 | 12:55 | Own this spec and Slack. Post the 12:45 changes in Slack. Help P1 with the `localhost:4545` page: "you're in X", the "who asked about you" log, the Pause button (it stops claims, answers and calls). |
