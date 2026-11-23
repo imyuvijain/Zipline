@@ -2,8 +2,6 @@
 
 **Live context for small teams.** Ask what a teammate is doing and get an answer a few seconds old, written by their own laptop. Zipline catches two people starting the same task before they both finish it, and when your manager hands you something, your phone rings and an ElevenLabs voice catches you up.
 
-Built in four hours by Team 23 at the **YC × ElevenLabs hackathon** (UWaterloo, 22 Nov 2026). The challenge was *"an AI coworker you'd actually use."*
-
 ![Asking what Maxim is doing: his laptop answers in 0.4s](docs/screenshots/02-ask-a-teammate.png)
 
 ---
@@ -185,7 +183,7 @@ More curl recipes (assign → ring, briefs, audio, the agent session) are in [`d
 - **Maritime**: hosts the server
 - Fastify, React, Vite, SQLite (`node:sqlite`), chokidar
 
-## Team 23
+## Team
 
 - Maxim
 - Anshi

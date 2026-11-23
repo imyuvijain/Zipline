@@ -41,10 +41,10 @@ const richardWeb = await scout("richard", undefined, "web");
 await post("/heartbeat", { user: "maxim" });
 await post("/heartbeat", { user: "richard" });
 const now = () => new Date().toISOString();
-check("claim maxim", (await post("/claim", { user: "maxim", area: "repo:team23-hack/server/export", since: now(), files: ["server/export/csv.ts"] })).ok);
+check("claim maxim", (await post("/claim", { user: "maxim", area: "repo:zipline/server/export", since: now(), files: ["server/export/csv.ts"] })).ok);
 
 // Stage 1: shared folder 2 deep + shared file -> strong candidate. Stage 2 runs in the background.
-const r2 = await post("/claim", { user: "richard", area: "repo:team23-hack/server/export/csv", since: now(), files: ["team23-hack/server/export/csv.ts"] });
+const r2 = await post("/claim", { user: "richard", area: "repo:zipline/server/export/csv", since: now(), files: ["zipline/server/export/csv.ts"] });
 check("stage 1 flags a candidate", r2.checking === 1, r2);
 await sleep(1500);
 const ping = richard.got.find((m) => m.type === "overlap_ping");
@@ -56,9 +56,9 @@ check("web socket never gets asks", !richardWeb.got.some((m) => m.type === "ask"
 check("intent asks don't fire asked_about_you", !maxim.got.some((m) => m.type === "asked_about_you"), maxim.got);
 check("answer endpoint", (await post(`/overlap/${ping?.overlapId}/answer`, { user: "richard", same: false })).ok === true);
 check("answer rejects outsiders", (await post(`/overlap/${ping?.overlapId}/answer`, { user: "yuvi", same: true })).ok === false);
-const r3 = await post("/claim", { user: "richard", area: "repo:team23-hack/server/export/csv", since: now() });
+const r3 = await post("/claim", { user: "richard", area: "repo:zipline/server/export/csv", since: now() });
 check("pair + area muted on repeat", r3.checking === 0, r3);
-const r4 = await post("/claim", { user: "anshi", area: "repo:team23-hack/server/routes", since: now() });
+const r4 = await post("/claim", { user: "anshi", area: "repo:zipline/server/routes", since: now() });
 check("1-folder-deep share is not a candidate", r4.checking === 0, r4);
 check("overlaps list", (await get("/overlaps")).length === 1);
 

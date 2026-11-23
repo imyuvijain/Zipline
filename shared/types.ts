@@ -4,7 +4,7 @@ export type UserId = string; // e.g. "priya" (see team.json)
 
 export interface Claim {
   user: UserId;
-  area: string;      // e.g. "repo:team23-hack/server/export" or "doc:Pricing page draft"
+  area: string;      // e.g. "repo:zipline/server/export" or "doc:Pricing page draft"
   branch?: string;
   since: string;     // ISO timestamp
   files?: string[];  // top 5 recently saved paths in this area (paths only), for the overlap check

@@ -51,5 +51,5 @@ export function startServerEvents() {
 }
 
 // Dev-only hook to rehearse without a server, e.g.
-// __zipline.emit({type:"overlap_ping", overlapId:"o1", other:"maxim", area:"repo:team23-hack/server/export", text:"..."})
+// __zipline.emit({type:"overlap_ping", overlapId:"o1", other:"maxim", area:"repo:zipline/server/export", text:"..."})
 if (import.meta.env.DEV) (window as unknown as { __zipline: unknown }).__zipline = { emit };

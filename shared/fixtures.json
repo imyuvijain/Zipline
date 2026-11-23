@@ -1,10 +1,10 @@
 {
   "team": "team-murmur",
   "members": [
-    { "user": "priya", "name": "Priya", "area": "repo:team23-hack/server/export", "since": "2026-11-22T14:12:00-05:00", "state": "active", "lastSeen": "2026-11-22T14:24:56-05:00" },
-    { "user": "sam", "name": "Sam", "area": "repo:team23-hack/web/settings", "since": "2026-11-22T13:53:00-05:00", "state": "active", "lastSeen": "2026-11-22T14:24:51-05:00" },
+    { "user": "priya", "name": "Priya", "area": "repo:zipline/server/export", "since": "2026-11-22T14:12:00-05:00", "state": "active", "lastSeen": "2026-11-22T14:24:56-05:00" },
+    { "user": "sam", "name": "Sam", "area": "repo:zipline/web/settings", "since": "2026-11-22T13:53:00-05:00", "state": "active", "lastSeen": "2026-11-22T14:24:51-05:00" },
     { "user": "jordan", "name": "Jordan", "area": "doc:Pricing page draft", "since": "2026-11-22T14:16:00-05:00", "state": "idle", "lastSeen": "2026-11-22T14:23:00-05:00" },
-    { "user": "alex", "name": "Alex", "area": "repo:team23-hack/demo", "since": "2026-11-22T13:52:00-05:00", "state": "offline", "lastSeen": "2026-11-22T13:52:00-05:00" }
+    { "user": "alex", "name": "Alex", "area": "repo:zipline/demo", "since": "2026-11-22T13:52:00-05:00", "state": "offline", "lastSeen": "2026-11-22T13:52:00-05:00" }
   ],
   "feed": [
     { "at": "2026-11-22T14:12:00-05:00", "kind": "claim", "text": "Priya is in server/export" },

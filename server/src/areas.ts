@@ -1,4 +1,4 @@
-// Areas look like "repo:team23-hack/server/export" or "doc:Pricing page draft".
+// Areas look like "repo:zipline/server/export" or "doc:Pricing page draft".
 
 function parse(area: string) {
   const i = area.indexOf(":");
@@ -45,7 +45,7 @@ export function stage1(
   return { candidate, strong, files };
 }
 
-/** "repo:team23-hack/server/export" -> "server/export"; "doc:Pricing page draft" -> "Pricing page draft". */
+/** "repo:zipline/server/export" -> "server/export"; "doc:Pricing page draft" -> "Pricing page draft". */
 export function displayArea(area: string): string {
   const { kind, segs } = parse(area);
   if (kind === "repo" && segs.length > 1) return segs.slice(1).join("/");

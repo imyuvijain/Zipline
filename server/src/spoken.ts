@@ -31,7 +31,7 @@ export function toSpoken(text: string): string {
   s = s.replace(/\bnpm\s+(?:run\s+)?(\w+)/gi, "the $1 command");
   // "(exit 1)" -> "failed"; a clean exit says nothing.
   s = s.replace(/\s*\(exit\s+0\)/gi, "").replace(/\s*\(exit\s+-?[1-9]\d*\)/gi, " failed");
-  // Areas like "repo:team23-hack/server" -> "the server area"
+  // Areas like "repo:zipline/server" -> "the server area"
   s = s.replace(/(?:\bthe\s+)?\brepo:[\w.-]+\/([\w./-]*[\w-])/g, (_m, rest: string) => `the ${rest.split("/").map(words).join(" ")} area`);
   s = s.replace(/\b(?:repo|file|cmd|commit|doc):/g, "");
   // Model tags: "Ollama qwen2.5:3b" -> "the Qwen model"

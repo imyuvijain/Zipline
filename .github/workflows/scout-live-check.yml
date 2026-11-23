@@ -36,7 +36,7 @@ jobs:
           const board = await get('/board');
           const maxim = board.members.find(m => m.user === 'maxim');
           assert.equal(maxim.state, 'active');
-          assert.ok(maxim.area?.startsWith('repo:team23-hack'), 'Missing project claim');
+          assert.ok(maxim.area?.startsWith('repo:zipline'), 'Missing project claim');
           for (let i = 0; i < 2; i++) {
             const start = performance.now();
             const answer = await get('/ask', {
@@ -131,7 +131,7 @@ jobs:
             sleep 1
           done
           export WATCH_REPOS="$RUNNER_TEMP/p1-work"
-          export MURMUR_USER=maxim DEMO_FAST_CLAIM=1 MURMUR_REPO_NAME=team23-hack
+          export MURMUR_USER=maxim DEMO_FAST_CLAIM=1 MURMUR_REPO_NAME=zipline
           git init -q "$WATCH_REPOS"
           mkdir -p "$WATCH_REPOS/scout" "$RUNNER_TEMP/scout-home"
           (cd scout && HOME="$RUNNER_TEMP/scout-home" node --import tsx index.ts) > /tmp/p1-scout.log 2>&1 &
@@ -155,7 +155,7 @@ jobs:
           const post={method:'POST',headers:{'content-type':'application/json'}};
           for(const file of ['billing-view.ts','customer-search.ts']){
             await writeFile(process.env.WATCH_REPOS+'/scout/'+file,'export const checked = true\n');
-            await until(async()=>(await json(root+'/board')).members.find(x=>x.user==='maxim')?.area==='repo:team23-hack/scout');
+            await until(async()=>(await json(root+'/board')).members.find(x=>x.user==='maxim')?.area==='repo:zipline/scout');
             const start=performance.now();
             const answer=await json(root+'/ask',{...post,body:JSON.stringify({target:'maxim',asker:'richard',question:'Which project file was saved most recently? Give its filename.'})});
             assert.equal(answer.cached,false);
